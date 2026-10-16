@@ -13,7 +13,7 @@ if (!apiKey) {
 const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 export function getGeminiModel(): string {
-  return process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+  return process.env.GEMINI_MODEL || "gemini-3.5-flash";
 }
 
 export interface InlineMediaPart {
@@ -30,7 +30,7 @@ export async function generateGeminiContent(options: {
   responseSchema?: Record<string, any>;
 }): Promise<string> {
   const primaryModel = getGeminiModel();
-  const fallbackModel = "gemini-3.8-flash";
+  const fallbackModel = "gemini-3.5-flash-lite";
 
   try {
     const response = await ai.models.generateContent({

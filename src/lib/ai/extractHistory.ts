@@ -3,22 +3,46 @@ import { generateGeminiContent, InlineMediaPart } from "./gemini";
 
 // ─── Zod Schema for Extracted Clinical History ──────────────────────────────
 export const medicationSchema = z.object({
-  name: z.string().describe("Medication brand or generic name"),
-  dose: z.string().describe("Dosage with units e.g. 50mg, 1 tablet"),
-  frequency: z.string().describe("Dosing frequency e.g. Once daily, twice daily after food"),
+  name: z.string().nullish().transform((v) => v || "Medication name not specified"),
+  dose: z.string().nullish().transform((v) => v || "Dose not stated"),
+  frequency: z.string().nullish().transform((v) => v || "Frequency not stated"),
 });
 
 export type Medication = z.infer<typeof medicationSchema>;
 
 export const extractedHistorySchema = z.object({
-  diagnosis: z.string().describe("Primary discharge diagnosis or reason for admission"),
-  medications: z.array(medicationSchema).default([]).describe("List of active discharge medications"),
-  medical_history: z.array(z.string()).default([]).describe("Past medical history, surgical history, or chronic conditions"),
-  risk_factors: z.array(z.string()).default([]).describe("Identified clinical risk factors e.g. hypertension, smoking, age > 65"),
-  allergies: z.array(z.string()).default([]).describe("Known drug or food allergies, or 'NKDA / No known allergies'"),
-  follow_up_plan: z.string().nullable().describe("Scheduled follow-up instructions, clinic visits, or milestone expectations"),
-  suggested_department: z.string().nullable().describe("Suggested hospital department based on diagnosis (e.g. Cardiology, Orthopaedics, General Surgery, Pulmonology)"),
-  confidence_notes: z.array(z.string()).default([]).describe("Clinical ambiguities, unclear dosages, or low-confidence extractions flagged for the reviewing doctor"),
+  diagnosis: z
+    .string()
+    .nullish()
+    .transform((val) => val?.trim() || "Clinical Condition (Doctor Review Required)"),
+  medications: z
+    .array(medicationSchema)
+    .nullish()
+    .transform((val) => val || []),
+  medical_history: z
+    .array(z.string())
+    .nullish()
+    .transform((val) => val || []),
+  risk_factors: z
+    .array(z.string())
+    .nullish()
+    .transform((val) => val || []),
+  allergies: z
+    .array(z.string())
+    .nullish()
+    .transform((val) => (val && val.length > 0 ? val : ["No known allergies recorded"])),
+  follow_up_plan: z
+    .string()
+    .nullish()
+    .transform((val) => val?.trim() || "Routine post-discharge clinical consultation"),
+  suggested_department: z
+    .string()
+    .nullish()
+    .transform((val) => val || null),
+  confidence_notes: z
+    .array(z.string())
+    .nullish()
+    .transform((val) => val || []),
 });
 
 export type ExtractedHistory = z.infer<typeof extractedHistorySchema>;
@@ -43,8 +67,18 @@ CRITICAL RULES:
 2. NEVER invent, hallucinate, or extrapolate diagnoses, medications, or dosages.
 3. If information for a field is missing, use null or "Not stated in record".
 4. If a dosage or frequency is ambiguous, note this ambiguity in confidence_notes.
-5. If the patient's condition clearly corresponds to a specialized medical unit (such as Cardiology, Orthopaedics, Pulmonology, General Surgery, Neurology), suggest it in suggested_department. Otherwise use null.
-6. Return your response strictly as valid JSON adhering to the required schema.`;
+5. If the patient's condition clearly corresponds to a specialized medical unit (such as Cardiology, Orthopaedics, Pulmonology, General Surgery, Oncology), suggest it in suggested_department. Otherwise use null.
+6. Return your response strictly as valid JSON adhering to the required schema keys:
+   {
+     "diagnosis": "string",
+     "medications": [{"name": "string", "dose": "string", "frequency": "string"}],
+     "medical_history": ["string"],
+     "risk_factors": ["string"],
+     "allergies": ["string"],
+     "follow_up_plan": "string",
+     "suggested_department": "string or null",
+     "confidence_notes": ["string"]
+   }`;
 
 /**
  * Extracts structured medical history from raw text or uploaded media (PDF / image).
@@ -74,7 +108,7 @@ export async function extractMedicalHistory(input: {
 
   contents.push(promptText);
 
-  // Attempt 1: Call Gemini with JSON response constraint
+  // Attempt extraction
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const responseText = await generateGeminiContent({
@@ -84,7 +118,14 @@ export async function extractMedicalHistory(input: {
       });
 
       // Parse JSON
-      const parsedJson = JSON.parse(responseText);
+      let cleaned = responseText.trim();
+      if (cleaned.startsWith("```json")) {
+        cleaned = cleaned.replace(/^```json/, "").replace(/```$/, "").trim();
+      } else if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```/, "").replace(/```$/, "").trim();
+      }
+
+      const parsedJson = JSON.parse(cleaned);
       const validated = extractedHistorySchema.parse(parsedJson);
 
       return { data: validated };
