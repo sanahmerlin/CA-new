@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Search, UserPlus, Users, Building2, ChevronRight, Calendar, HeartPulse } from "lucide-react";
+import { Search, UserPlus, Users, Building2, ChevronRight, Calendar, HeartPulse, Layers } from "lucide-react";
 
 interface PatientItem {
   id: string;
@@ -58,13 +58,23 @@ export function PatientsClient({
             Enrolled post-discharge patients and clinical monitoring status
           </p>
         </div>
-        <Link
-          href="/app/patients/enrol"
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors self-start sm:self-auto"
-        >
-          <UserPlus className="h-4 w-4" />
-          <span>Enrol Patient</span>
-        </Link>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <Link
+            href="/app/patients/enrol?mode=bulk"
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-lg border border-slate-300 shadow-xs transition-colors"
+          >
+            <Layers className="h-4 w-4 text-teal-600" />
+            <span>Bulk Upload</span>
+          </Link>
+
+          <Link
+            href="/app/patients/enrol"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>Enrol Patient</span>
+          </Link>
+        </div>
       </div>
 
       {/* Filter & Search Bar */}

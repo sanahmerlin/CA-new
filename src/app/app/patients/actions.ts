@@ -95,6 +95,7 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
     await writeAudit("ENROL", "patients", patient.id);
 
     revalidatePath("/app/patients");
+    revalidatePath("/app/departments");
     revalidatePath("/app/dashboard");
 
     return { success: true, patientId: patient.id };
@@ -102,3 +103,94 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
     return { error: err.message || "An unexpected error occurred during patient enrollment." };
   }
 }
+
+export async function enrolBatchPatients(patients: EnrolPatientPayload[]) {
+  try {
+    if (!patients || patients.length === 0) {
+      return { error: "No patients provided for batch enrollment." };
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { error: "Authentication required to enrol patients." };
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("hospital_id")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.hospital_id) {
+      return { error: "Hospital profile not found." };
+    }
+
+    // 1. Prepare patient insert records
+    const patientRows = patients.map((p) => ({
+      hospital_id: profile.hospital_id,
+      department_id: p.department_id || null,
+      full_name: p.full_name || "Discharged Patient",
+      age: Number(p.age) || 50,
+      sex: p.sex || "Other",
+      patient_phone: p.patient_phone || "+91-9876543210",
+      caregiver_name: p.caregiver_name || null,
+      caregiver_relation: p.caregiver_relation || null,
+      caregiver_phone: p.caregiver_phone || null,
+      discharge_date: p.discharge_date || new Date().toISOString().split("T")[0],
+      raw_history_text: p.raw_history_text || null,
+      status: "active",
+    }));
+
+    const { data: insertedPatients, error: patientError } = await supabase
+      .from("patients")
+      .insert(patientRows)
+      .select("id");
+
+    if (patientError || !insertedPatients) {
+      return { error: patientError?.message || "Failed to create batch patient records." };
+    }
+
+    // 2. Prepare clinical records for each inserted patient
+    const recordRows = insertedPatients.map((patient, index) => {
+      const source = patients[index];
+      return {
+        patient_id: patient.id,
+        hospital_id: profile.hospital_id,
+        diagnosis: source.diagnosis || "Post-Discharge Care Required",
+        medications: source.medications || [],
+        medical_history: source.medical_history || [],
+        risk_factors: source.risk_factors || [],
+        allergies: source.allergies || [],
+        follow_up_plan: source.follow_up_plan || null,
+        confirmed_by: user.id,
+        confirmed_at: new Date().toISOString(),
+      };
+    });
+
+    const { error: recordsError } = await supabase
+      .from("patient_records")
+      .insert(recordRows);
+
+    if (recordsError) {
+      return {
+        error: `Patients created, but clinical records failed: ${recordsError.message}`,
+      };
+    }
+
+    // 3. Write batch audit log
+    await writeAudit("BATCH_ENROL", "patients", `batch_${insertedPatients.length}`);
+
+    revalidatePath("/app/patients");
+    revalidatePath("/app/departments");
+    revalidatePath("/app/dashboard");
+
+    return { success: true, count: insertedPatients.length };
+  } catch (err: any) {
+    return { error: err.message || "An unexpected error occurred during batch enrollment." };
+  }
+}
+

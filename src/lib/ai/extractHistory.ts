@@ -11,6 +11,40 @@ export const medicationSchema = z.object({
 export type Medication = z.infer<typeof medicationSchema>;
 
 export const extractedHistorySchema = z.object({
+  patient_name: z
+    .string()
+    .nullish()
+    .transform((val) => val?.trim() || "Discharged Patient"),
+  age: z
+    .coerce
+    .number()
+    .nullish()
+    .transform((val) => (val && val > 0 && val < 130 ? val : 50)),
+  sex: z
+    .string()
+    .nullish()
+    .transform((val) => {
+      const s = val?.toLowerCase() || "";
+      if (s.includes("fem") || s.startsWith("f")) return "Female";
+      if (s.includes("mal") || s.startsWith("m")) return "Male";
+      return "Other";
+    }),
+  patient_phone: z
+    .string()
+    .nullish()
+    .transform((val) => val?.trim() || "+91-9876543210"),
+  caregiver_name: z
+    .string()
+    .nullish()
+    .transform((val) => val?.trim() || null),
+  caregiver_relation: z
+    .string()
+    .nullish()
+    .transform((val) => val?.trim() || null),
+  caregiver_phone: z
+    .string()
+    .nullish()
+    .transform((val) => val?.trim() || null),
   diagnosis: z
     .string()
     .nullish()
@@ -49,6 +83,13 @@ export type ExtractedHistory = z.infer<typeof extractedHistorySchema>;
 
 // Safe fallback for manual entry when extraction fails or input is unreadable
 export const defaultManualFallback: ExtractedHistory = {
+  patient_name: "Discharged Patient",
+  age: 50,
+  sex: "Male",
+  patient_phone: "+91-9876543210",
+  caregiver_name: null,
+  caregiver_relation: null,
+  caregiver_phone: null,
   diagnosis: "Unspecified Clinical Condition",
   medications: [],
   medical_history: [],
@@ -60,29 +101,28 @@ export const defaultManualFallback: ExtractedHistory = {
 };
 
 const SYSTEM_INSTRUCTION = `You are an expert clinical documentation assistant.
-Your task is to accurately extract structured post-discharge medical information from raw clinical notes, discharge summaries, or scanned medical records.
+Your task is to accurately extract structured demographic and clinical information from raw clinical notes, discharge summaries, or scanned medical records.
 
 CRITICAL RULES:
-1. Extract ONLY what is explicitly stated in the provided text or document.
-2. NEVER invent, hallucinate, or extrapolate diagnoses, medications, or dosages.
-3. If information for a field is missing, use null or "Not stated in record".
-4. If a dosage or frequency is ambiguous, note this ambiguity in confidence_notes.
-5. If the patient's condition clearly corresponds to a specialized medical unit (such as Cardiology, Orthopaedics, Pulmonology, General Surgery, Oncology), suggest it in suggested_department. Otherwise use null.
-6. Return your response strictly as valid JSON adhering to the required schema keys:
-   {
-     "diagnosis": "string",
-     "medications": [{"name": "string", "dose": "string", "frequency": "string"}],
-     "medical_history": ["string"],
-     "risk_factors": ["string"],
-     "allergies": ["string"],
-     "follow_up_plan": "string",
-     "suggested_department": "string or null",
-     "confidence_notes": ["string"]
-   }`;
+1. Extract patient demographics if present:
+   - patient_name (full name of patient)
+   - age (numeric integer)
+   - sex ("Male", "Female", or "Other")
+   - patient_phone (phone or contact number, if stated)
+   - caregiver_name / caregiver_relation / caregiver_phone (next of kin / relative, if stated)
+2. Extract clinical details:
+   - diagnosis (primary discharge diagnosis)
+   - medications (list of active discharge prescriptions with name, dose, frequency)
+   - medical_history (past medical/surgical history)
+   - risk_factors (clinical complications or high readmission risks)
+   - allergies (drug allergies or NKDA)
+   - follow_up_plan (clinic review dates, red flag instructions)
+   - suggested_department (e.g. Cardiology, Orthopaedics, Pulmonology, General Surgery)
+3. Extract ONLY what is stated. NEVER invent medications or dosages.
+4. Return your response strictly as valid JSON adhering to the required schema keys.`;
 
 /**
- * Extracts structured medical history from raw text or uploaded media (PDF / image).
- * Retries once on invalid JSON, then returns fallback with error flag.
+ * Extracts structured medical history and demographics from raw text or uploaded media (PDF / image).
  */
 export async function extractMedicalHistory(input: {
   rawText?: string;
@@ -103,8 +143,8 @@ export async function extractMedicalHistory(input: {
   }
 
   const promptText = input.rawText
-    ? `Please analyze and extract structured clinical history from the following discharge record:\n\n${input.rawText}`
-    : `Please analyze and extract structured clinical history from the attached medical document.`;
+    ? `Please analyze and extract structured demographic and clinical history from the following discharge record:\n\n${input.rawText}`
+    : `Please analyze and extract structured demographic and clinical history from the attached medical document.`;
 
   contents.push(promptText);
 
@@ -117,7 +157,6 @@ export async function extractMedicalHistory(input: {
         responseMimeType: "application/json",
       });
 
-      // Parse JSON
       let cleaned = responseText.trim();
       if (cleaned.startsWith("```json")) {
         cleaned = cleaned.replace(/^```json/, "").replace(/```$/, "").trim();

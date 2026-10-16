@@ -20,9 +20,12 @@ import {
   ShieldAlert,
   ArrowRight,
   Info,
+  Layers,
+  UserPlus,
 } from "lucide-react";
 import { enrolPatient } from "../actions";
 import type { ExtractedHistory, Medication } from "@/lib/ai/extractHistory";
+import { BulkEnrolClient } from "./bulk-enrol-client";
 
 interface Department {
   id: string;
@@ -80,8 +83,15 @@ Follow-up: Ortho OPD visit on Day 12 for wound dressing and staple removal. Dail
   },
 ];
 
-export function EnrolClient({ departments }: { departments: Department[] }) {
+export function EnrolClient({
+  departments,
+  initialMode = "single",
+}: {
+  departments: Department[];
+  initialMode?: "single" | "bulk";
+}) {
   const router = useRouter();
+  const [enrolMode, setEnrolMode] = useState<"single" | "bulk">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Step 1: Basics
@@ -217,18 +227,70 @@ export function EnrolClient({ departments }: { departments: Department[] }) {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* Stepper Header */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              Enrol Discharged Patient
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Step {step} of 3 • AI-powered history extraction & clinical onboarding
-            </p>
-          </div>
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Mode Switcher Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setEnrolMode("single")}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              enrolMode === "single"
+                ? "bg-teal-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>Single Patient Enrolment</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setEnrolMode("bulk")}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              enrolMode === "bulk"
+                ? "bg-teal-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            <span>Bulk / Batch Upload</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                enrolMode === "bulk"
+                  ? "bg-teal-500 text-white"
+                  : "bg-teal-100 text-teal-800"
+              }`}
+            >
+              AI Batch
+            </span>
+          </button>
+        </div>
+
+        <Link
+          href="/app/patients"
+          className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-3 py-1.5 self-end sm:self-auto"
+        >
+          Back to Directory
+        </Link>
+      </div>
+
+      {/* Render Bulk Client if selected */}
+      {enrolMode === "bulk" ? (
+        <BulkEnrolClient departments={departments} />
+      ) : (
+        <div className="space-y-8">
+          {/* Stepper Header */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                  Enrol Discharged Patient
+                </h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Step {step} of 3 • AI-powered history extraction & clinical onboarding
+                </p>
+              </div>
           <Link
             href="/app/patients"
             className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
@@ -822,6 +884,8 @@ export function EnrolClient({ departments }: { departments: Department[] }) {
               <span>{isSubmitting ? "Saving & Enrolling..." : "Confirm & Enrol Patient"}</span>
             </button>
           </div>
+        </div>
+      )}
         </div>
       )}
     </div>
