@@ -6,8 +6,20 @@ export default async function DepartmentsPage() {
 
   const { data: departments } = await supabase
     .from("departments")
-    .select("id, name, created_at")
+    .select(`
+      id,
+      name,
+      created_at,
+      patients (count)
+    `)
     .order("name", { ascending: true });
 
-  return <DepartmentsClient departments={departments || []} />;
+  const formatted = (departments || []).map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    created_at: d.created_at,
+    patient_count: d.patients?.[0]?.count ?? 0,
+  }));
+
+  return <DepartmentsClient departments={formatted} />;
 }

@@ -10,6 +10,7 @@ interface Department {
   id: string;
   name: string;
   created_at: string;
+  patient_count?: number;
 }
 
 export function DepartmentsClient({
@@ -169,7 +170,9 @@ export function DepartmentsClient({
                   </Link>
                   <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
                     <Users className="h-3.5 w-3.5" />
-                    <span>0 enrolled patients</span>
+                    <span>
+                      {dept.patient_count ?? 0} {dept.patient_count === 1 ? "enrolled patient" : "enrolled patients"}
+                    </span>
                   </p>
                 </div>
               </div>
