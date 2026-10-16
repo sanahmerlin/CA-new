@@ -4,13 +4,13 @@ if (typeof window !== "undefined") {
   throw new Error("Gemini API calls can only be executed on the server.");
 }
 
-const apiKey = process.env.GEMINI_API_KEY;
-
-if (!apiKey) {
-  console.warn("GEMINI_API_KEY is not defined in environment variables.");
+function getAiClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY is not defined in environment variables.");
+  }
+  return new GoogleGenAI({ apiKey: apiKey || "" });
 }
-
-const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL || "gemini-3.5-flash";
@@ -32,8 +32,10 @@ export async function generateGeminiContent(options: {
   const primaryModel = getGeminiModel();
   const fallbackModel = "gemini-3.5-flash-lite";
 
+  const client = getAiClient();
+
   try {
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
       model: primaryModel,
       contents: options.contents as any,
       config: {
@@ -48,7 +50,7 @@ export async function generateGeminiContent(options: {
   } catch (err: any) {
     // If primary model experienced 503 spike or error, retry once with fallback
     console.warn(`Primary Gemini model (${primaryModel}) error: ${err.message}. Retrying with ${fallbackModel}...`);
-    const fallbackResponse = await ai.models.generateContent({
+    const fallbackResponse = await client.models.generateContent({
       model: fallbackModel,
       contents: options.contents as any,
       config: {

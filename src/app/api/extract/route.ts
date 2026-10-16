@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
     const result = await extractMedicalHistory({
       rawText: rawText.trim() || undefined,
       mediaFile,
+      filename: file?.name,
     });
 
     return NextResponse.json(result);

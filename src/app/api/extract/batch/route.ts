@@ -76,7 +76,10 @@ export async function POST(req: NextRequest) {
 
           if (isText) {
             const textContent = await file.text();
-            const res = await extractMedicalHistory({ rawText: textContent });
+            const res = await extractMedicalHistory({
+              rawText: textContent,
+              filename: file.name,
+            });
             return {
               filename: file.name,
               data: res.data,
@@ -89,7 +92,10 @@ export async function POST(req: NextRequest) {
               mimeType: file.type || "application/pdf",
               base64Data: buffer.toString("base64"),
             };
-            const res = await extractMedicalHistory({ mediaFile });
+            const res = await extractMedicalHistory({
+              mediaFile,
+              filename: file.name,
+            });
             return {
               filename: file.name,
               data: res.data,

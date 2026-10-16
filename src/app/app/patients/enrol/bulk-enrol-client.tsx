@@ -212,7 +212,12 @@ export function BulkEnrolClient({ departments }: { departments: Department[] }) 
         return {
           id: `batch-${Date.now()}-${idx}`,
           filename: item.filename,
-          fullName: d.patient_name || `Patient #${idx + 1}`,
+          fullName:
+            d.patient_name && d.patient_name !== "Discharged Patient"
+              ? d.patient_name
+              : item.filename && !item.filename.startsWith("Clinical Note")
+              ? item.filename.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim()
+              : d.patient_name || `Patient #${idx + 1}`,
           age: d.age || 50,
           sex: d.sex || "Other",
           patientPhone: d.patient_phone || "+91-9876543210",
