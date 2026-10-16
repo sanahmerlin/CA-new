@@ -1,0 +1,61 @@
+{
+  "common": {
+    "appName": "CareAfter",
+    "disclaimer": "Demo only. Not a medical device.",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "loading": "Loading...",
+    "confirmDelete": "Are you sure you want to delete this department?",
+    "confirmDeleteDescription": "This action cannot be undone. All clinical routes associated with this department will be unassigned."
+  },
+  "auth": {
+    "title": "Clinical Access Portal",
+    "subtitle": "Sign in with your hospital staff credentials",
+    "emailLabel": "Staff Email",
+    "passwordLabel": "Password",
+    "signInButton": "Sign In to Hospital Portal",
+    "signingIn": "Authenticating...",
+    "errorInvalid": "Invalid staff credentials. Please check your email and password.",
+    "demoCredentialsTitle": "Demo Credentials",
+    "sunriseDemo": "Sunrise Heart & General Hospital",
+    "lakeviewDemo": "Lakeview Medical (Empty Isolation Demo)"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "departments": "Departments",
+    "patients": "Patients",
+    "settings": "Settings",
+    "signOut": "Sign Out"
+  },
+  "dashboard": {
+    "title": "Hospital Overview",
+    "subtitle": "Real-time post-discharge recovery monitoring",
+    "totalPatients": "Enrolled Patients",
+    "activeMonitoring": "Active Monitoring",
+    "departmentsCount": "Active Departments",
+    "priorityAlertsTitle": "Priority Clinical Alerts",
+    "noAlerts": "No priority alerts pending. All monitored patients are in stable recovery."
+  },
+  "departments": {
+    "title": "Departments",
+    "subtitle": "Manage hospital clinical units and monitoring services",
+    "addDepartment": "New Department",
+    "createTitle": "Create Department",
+    "createDescription": "Add a new specialized clinical department to your hospital.",
+    "nameLabel": "Department Name",
+    "namePlaceholder": "e.g. Cardiology",
+    "renameTitle": "Rename Department",
+    "emptyState": "No departments configured yet",
+    "emptyStateDescription": "Create your first clinical department to start enrolling discharged patients.",
+    "createdSuccess": "Department created successfully.",
+    "updatedSuccess": "Department updated successfully.",
+    "deletedSuccess": "Department deleted successfully.",
+    "patientsTab": "Patients",
+    "analyticsTab": "Analytics",
+    "patientsEmpty": "No patients currently enrolled in this department.",
+    "analyticsEmpty": "Analytics will appear once check-in data is gathered."
+  }
+}
