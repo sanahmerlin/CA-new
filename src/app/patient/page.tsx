@@ -1,19 +1,23 @@
+import { redirect } from "next/navigation";
+import { getPatientSession } from "@/lib/auth/patient-session";
+import { getPatientPortalDataFromSession } from "./actions";
 import { PatientClient } from "./patient-client";
-import { getPatientPortalData } from "./actions";
 
-export default async function PatientPortalPage(props: {
-  searchParams: Promise<{ code?: string }>;
-}) {
-  const searchParams = await props.searchParams;
-  const initialCode = searchParams?.code || "";
+export const metadata = {
+  title: "CareAfter Recovery Portal",
+  description: "Post-discharge patient health monitoring companion",
+};
 
-  let initialData = null;
-  if (initialCode && initialCode.trim().length === 6) {
-    const res = await getPatientPortalData(initialCode.trim());
-    if (res.success) {
-      initialData = res;
-    }
+export default async function PatientPortalPage() {
+  const session = await getPatientSession();
+  if (!session?.patientId) {
+    redirect("/patient/login");
   }
 
-  return <PatientClient initialCode={initialCode} initialData={initialData} />;
+  const initialData = await getPatientPortalDataFromSession();
+  if (initialData.needLogin) {
+    redirect("/patient/login");
+  }
+
+  return <PatientClient initialData={initialData} />;
 }

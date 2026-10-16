@@ -22,16 +22,14 @@ import {
   Info,
   Layers,
   UserPlus,
-  QrCode,
   Copy,
   ExternalLink,
   ShieldCheck,
   Check,
 } from "lucide-react";
-import { enrolPatient } from "../actions";
+import { enrolPatient, createPendingPatientStep1 } from "../actions";
 import type { ExtractedHistory, Medication } from "@/lib/ai/extractHistory";
 import { BulkEnrolClient } from "./bulk-enrol-client";
-import { generateQrDataUrl } from "@/lib/qr";
 
 interface Department {
   id: string;
@@ -132,17 +130,60 @@ export function EnrolClient({
   const [monitoringTier, setMonitoringTier] = useState<"low" | "moderate" | "high">("moderate");
   const [planTier, setPlanTier] = useState<"free" | "pro">("free");
   const [consentGiven, setConsentGiven] = useState(true);
+  const [createdPatientId, setCreatedPatientId] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState<{ username: string; plainPassword: string } | null>(null);
+  const [isSavingStep1, setIsSavingStep1] = useState(false);
+  const [step1Error, setStep1Error] = useState<string | null>(null);
   const [enrolledModal, setEnrolledModal] = useState<{
     patientId: string;
-    accessCode: string;
+    username: string;
+    plainPassword: string;
     fullName: string;
-    qrDataUrl: string;
   } | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedUser, setCopiedUser] = useState(false);
+  const [copiedPass, setCopiedPass] = useState(false);
 
   // Submission
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Save Step 1 & Generate Credentials
+  const handleSaveStep1 = async () => {
+    if (!fullName.trim() || !age || !patientPhone.trim()) {
+      setStep1Error("Please fill out patient name, age, and phone number.");
+      return;
+    }
+    setIsSavingStep1(true);
+    setStep1Error(null);
+    try {
+      const res = await createPendingPatientStep1({
+        full_name: fullName.trim(),
+        age: Number(age) || 45,
+        sex,
+        department_id: departmentId,
+        discharge_date: dischargeDate,
+        patient_phone: patientPhone.trim(),
+        caregiver_name: caregiverName.trim() || undefined,
+        caregiver_relation: caregiverRelation.trim() || undefined,
+        caregiver_phone: caregiverPhone.trim() || undefined,
+      });
+
+      if (res.error) {
+        setStep1Error(res.error);
+      } else if (res.patientId) {
+        setCreatedPatientId(res.patientId);
+        setCredentials({
+          username: res.username!,
+          plainPassword: res.plainPassword!,
+        });
+        setStep(2);
+      }
+    } catch (err: any) {
+      setStep1Error(err.message || "Failed to create patient account.");
+    } finally {
+      setIsSavingStep1(false);
+    }
+  };
 
   // Run AI Extraction
   const handleExtract = async () => {
@@ -206,6 +247,9 @@ export function EnrolClient({
     setSubmitError(null);
 
     const payload = {
+      patientId: createdPatientId || undefined,
+      username: credentials?.username,
+      plainPassword: credentials?.plainPassword,
       full_name: fullName,
       age: Number(age) || 0,
       sex,
@@ -232,14 +276,12 @@ export function EnrolClient({
 
     if (res.error) {
       setSubmitError(res.error);
-    } else if (res.patientId && res.accessCode) {
-      const portalUrl = `${window.location.origin}/patient?code=${res.accessCode}`;
-      const qrDataUrl = await generateQrDataUrl(portalUrl);
+    } else if (res.patientId && res.username && res.plainPassword) {
       setEnrolledModal({
         patientId: res.patientId,
-        accessCode: res.accessCode,
+        username: res.username,
+        plainPassword: res.plainPassword,
         fullName,
-        qrDataUrl,
       });
     } else if (res.patientId) {
       router.push(`/app/patients/${res.patientId}`);
@@ -544,15 +586,31 @@ export function EnrolClient({
             </div>
           </div>
 
+          {step1Error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+              <span>{step1Error}</span>
+            </div>
+          )}
+
           <div className="flex justify-end pt-4">
             <button
               type="button"
-              disabled={!fullName.trim() || !age || !patientPhone.trim()}
-              onClick={() => setStep(2)}
+              disabled={!fullName.trim() || !age || !patientPhone.trim() || isSavingStep1}
+              onClick={handleSaveStep1}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
-              <span>Continue to Clinical History</span>
-              <ChevronRight className="h-4 w-4" />
+              {isSavingStep1 ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Creating Patient Account...</span>
+                </>
+              ) : (
+                <>
+                  <span>Continue to Clinical History</span>
+                  <ChevronRight className="h-4 w-4" />
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -988,7 +1046,7 @@ export function EnrolClient({
         </div>
       )}
 
-      {/* QR Code & Discharge Modal */}
+      {/* Patient Login Credentials Modal */}
       {enrolledModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-5 shadow-2xl border border-slate-200">
@@ -1001,65 +1059,81 @@ export function EnrolClient({
                 Patient Successfully Enrolled!
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                {enrolledModal.fullName} is now enrolled in CareAfter Post-Discharge Monitoring.
+                {enrolledModal.fullName} is enrolled and their post-discharge care plan is active.
               </p>
             </div>
 
-            {/* QR Code */}
-            {enrolledModal.qrDataUrl && (
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 inline-block">
-                <img
-                  src={enrolledModal.qrDataUrl}
-                  alt="Scan to open Patient Portal"
-                  className="w-48 h-48 mx-auto rounded-lg"
-                />
-                <p className="text-[10px] text-slate-500 mt-1.5 font-medium">
-                  Scan with smartphone camera to open check-in
-                </p>
-              </div>
-            )}
+            {/* Credentials Card */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left space-y-3">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                Patient Portal Credentials
+              </span>
 
-            {/* 6-Digit PIN */}
-            <div className="bg-teal-50 border border-teal-200 p-3 rounded-xl">
-              <span className="text-[11px] font-semibold text-teal-800 uppercase block">
-                Patient 6-Digit Access Code
-              </span>
-              <span className="text-2xl font-mono font-bold text-teal-900 tracking-widest">
-                {enrolledModal.accessCode}
-              </span>
+              {/* Username row */}
+              <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">Username</span>
+                  <span className="text-xs font-mono font-bold text-slate-900">
+                    {enrolledModal.username}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(enrolledModal.username);
+                    setCopiedUser(true);
+                    setTimeout(() => setCopiedUser(false), 2000);
+                  }}
+                  className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-slate-50 rounded-md transition"
+                  title="Copy username"
+                >
+                  {copiedUser ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Password row */}
+              <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-medium">Password</span>
+                  <span className="text-xs font-mono font-bold text-slate-900">
+                    {enrolledModal.plainPassword}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(enrolledModal.plainPassword);
+                    setCopiedPass(true);
+                    setTimeout(() => setCopiedPass(false), 2000);
+                  }}
+                  className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-slate-50 rounded-md transition"
+                  title="Copy password"
+                >
+                  {copiedPass ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-500 leading-normal pt-1">
+                Provide these credentials to the patient to sign in at <strong className="text-teal-700">/patient/login</strong>.
+              </p>
             </div>
 
             {/* Actions */}
             <div className="space-y-2 pt-1">
               <a
-                href={`/patient?code=${enrolledModal.accessCode}`}
+                href="/patient/login"
                 target="_blank"
                 rel="noreferrer"
                 className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors"
               >
-                <span>Open Patient Portal (New Tab)</span>
+                <span>Open /patient/login (New Tab)</span>
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
 
               <button
                 type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(
-                    `${window.location.origin}/patient?code=${enrolledModal.accessCode}`
-                  );
-                  setCopiedLink(true);
-                  setTimeout(() => setCopiedLink(false), 2000);
-                }}
-                className="w-full py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-              >
-                {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                <span>{copiedLink ? "Link Copied!" : "Copy Portal Link"}</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => router.push(`/app/patients/${enrolledModal.patientId}`)}
-                className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-800"
+                className="w-full py-2.5 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition"
               >
                 View Patient Clinical Dashboard
               </button>

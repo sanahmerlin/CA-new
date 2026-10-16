@@ -19,7 +19,7 @@ import {
   QrCode,
 } from "lucide-react";
 import type { Medication } from "@/lib/ai/extractHistory";
-import { PatientQrButton } from "./patient-qr-button";
+import { PatientCredentialsHeader } from "./patient-credentials-header";
 
 export default async function PatientDetailPage({
   params,
@@ -157,12 +157,12 @@ export default async function PatientDetailPage({
             <div>
               Discharged: <span className="font-semibold text-slate-800">{patient.discharge_date}</span>
             </div>
-            {patient.access_code && (
-              <PatientQrButton
-                accessCode={patient.access_code}
-                patientName={patient.full_name}
-              />
-            )}
+            <PatientCredentialsHeader
+              patientId={patient.id}
+              username={patient.username}
+              fullName={patient.full_name}
+              age={patient.age}
+            />
           </div>
         </div>
       </div>

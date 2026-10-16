@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import * as dotenv from "dotenv";
 import { resolve } from "path";
+import bcrypt from "bcryptjs";
 import type { Database } from "../src/lib/supabase/types";
 
 dotenv.config({ path: resolve(process.cwd(), ".env.local") });
@@ -356,9 +357,22 @@ async function seed() {
   }
 
   // 4. Upsert 10 Realistic Patients for Sunrise Heart & General
-  console.log("\n👨‍⚕️ Upserting 10 seeded patients for Sunrise Hospital...");
+  console.log("\n👨‍⚕️ Upserting 10 seeded patients for Sunrise Hospital with Patient Logins...");
+  const sampleLogins: { name: string; username: string; pass: string }[] = [];
+
   for (const p of PATIENT_DATA) {
     const deptId = deptMap.get(p.department) || null;
+
+    const cleanParts = p.full_name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter(Boolean);
+    const username = cleanParts.join(".");
+    const plainPassword = `${cleanParts[0]}${p.age}`;
+    const passwordHash = await bcrypt.hash(plainPassword, 10);
+    sampleLogins.push({ name: p.full_name, username, pass: plainPassword });
 
     // Check if patient exists
     const { data: existingPatient } = await supabase
@@ -368,7 +382,14 @@ async function seed() {
       .maybeSingle();
 
     if (existingPatient) {
-      console.log(`  ⏭  Patient ${p.full_name} exists`);
+      await supabase
+        .from("patients")
+        .update({
+          username,
+          password_hash: passwordHash,
+        })
+        .eq("id", p.id);
+      console.log(`  🔄 Updated credentials for ${p.full_name} (${username})`);
     } else {
       const { error: pError } = await supabase.from("patients").insert({
         id: p.id,
@@ -384,10 +405,12 @@ async function seed() {
         discharge_date: p.discharge_date,
         raw_history_text: p.raw_history_text,
         status: "active",
+        username,
+        password_hash: passwordHash,
       });
 
       if (pError) throw new Error(`Patient insert failed for ${p.full_name}: ${pError.message}`);
-      console.log(`  ✅ Inserted patient: ${p.full_name} (${p.department})`);
+      console.log(`  ✅ Inserted patient: ${p.full_name} (${username})`);
     }
 
     // Upsert Patient Record
@@ -416,9 +439,13 @@ async function seed() {
   }
 
   console.log("\n✨ Seed complete!");
-  console.log("Credentials:");
-  console.log(`  Sunrise Hospital: admin@sunrise.demo / ${DEMO_PASSWORD} (10 Patients across 4 Depts)`);
-  console.log(`  Lakeview Medical: admin@lakeview.demo / ${DEMO_PASSWORD} (0 Patients - Isolation Demo)`);
+  console.log("Hospital Staff Credentials:");
+  console.log(`  Sunrise Hospital: admin@sunrise.demo / ${DEMO_PASSWORD}`);
+  console.log(`  Lakeview Medical: admin@lakeview.demo / ${DEMO_PASSWORD}`);
+  console.log("\nPatient Portal Credentials (/patient/login):");
+  sampleLogins.slice(0, 3).forEach((s) => {
+    console.log(`  ${s.name.padEnd(18)}: username: ${s.username.padEnd(18)} password: ${s.pass}`);
+  });
 }
 
 seed().catch((err) => {

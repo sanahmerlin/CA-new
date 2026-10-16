@@ -1,12 +1,35 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { writeAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
-
 import { generateMonitoringPlan } from "@/lib/ai/generatePlan";
+import { generatePatientCredentials } from "@/lib/auth/patient-session";
+
+function getServiceClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createServiceClient(url, serviceKey);
+}
+
+export interface Step1PatientPayload {
+  full_name: string;
+  age: number;
+  sex: string;
+  department_id: string;
+  discharge_date: string;
+  patient_phone: string;
+  caregiver_name?: string;
+  caregiver_relation?: string;
+  caregiver_phone?: string;
+}
 
 export interface EnrolPatientPayload {
+  patientId?: string;
+  username?: string;
+  plainPassword?: string;
+
   // Step 1 Basics
   full_name: string;
   age: number;
@@ -27,12 +50,93 @@ export interface EnrolPatientPayload {
   allergies: string[];
   follow_up_plan?: string;
 
-  // Phase 3 Parameters
+  // Monitoring Parameters
   monitoring_tier?: "low" | "moderate" | "high";
   plan_tier?: "free" | "pro";
   consent_given?: boolean;
 }
 
+/**
+ * Step 1: Create pending patient record with login credentials
+ * Called immediately when staff save Step 1 (Basics)
+ */
+export async function createPendingPatientStep1(payload: Step1PatientPayload) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { error: "Authentication required to enrol patient." };
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("hospital_id")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.hospital_id) {
+      return { error: "Hospital profile not found." };
+    }
+
+    const serviceClient = getServiceClient();
+
+    // Generate credentials with cross-hospital unique username check
+    const credentials = await generatePatientCredentials(
+      payload.full_name,
+      Number(payload.age) || 45,
+      async (candidate) => {
+        const { data } = await serviceClient
+          .from("patients")
+          .select("id")
+          .eq("username", candidate)
+          .maybeSingle();
+        return Boolean(data);
+      }
+    );
+
+    // Insert pending patient
+    const { data: patient, error: insertError } = await supabase
+      .from("patients")
+      .insert({
+        hospital_id: profile.hospital_id,
+        department_id: payload.department_id || null,
+        full_name: payload.full_name,
+        age: Number(payload.age) || 45,
+        sex: payload.sex || "Other",
+        patient_phone: payload.patient_phone,
+        caregiver_name: payload.caregiver_name || null,
+        caregiver_relation: payload.caregiver_relation || null,
+        caregiver_phone: payload.caregiver_phone || null,
+        discharge_date: payload.discharge_date,
+        status: "pending",
+        username: credentials.username,
+        password_hash: credentials.passwordHash,
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !patient) {
+      return { error: insertError?.message || "Failed to create pending patient account." };
+    }
+
+    return {
+      success: true,
+      patientId: patient.id,
+      username: credentials.username,
+      plainPassword: credentials.plainPassword,
+    };
+  } catch (err: any) {
+    return { error: err.message || "Failed to create patient account." };
+  }
+}
+
+/**
+ * Step 3: Confirm & Enrol
+ * Activates patient, stores clinical records, and generates monitoring plan & checkins
+ */
 export async function enrolPatient(payload: EnrolPatientPayload) {
   try {
     const supabase = await createClient();
@@ -54,42 +158,80 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
       return { error: "Hospital profile not found." };
     }
 
-    // Generate 6-digit numeric access code for patient portal
-    const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+    let patientId = payload.patientId;
+    let finalUsername = payload.username;
+    let finalPlainPassword = payload.plainPassword;
 
-    // 1. Insert patient record
-    const { data: patient, error: patientError } = await supabase
-      .from("patients")
-      .insert({
-        hospital_id: profile.hospital_id,
-        department_id: payload.department_id || null,
-        full_name: payload.full_name,
-        age: payload.age,
-        sex: payload.sex,
-        patient_phone: payload.patient_phone,
-        caregiver_name: payload.caregiver_name || null,
-        caregiver_relation: payload.caregiver_relation || null,
-        caregiver_phone: payload.caregiver_phone || null,
-        discharge_date: payload.discharge_date,
-        raw_history_text: payload.raw_history_text || null,
-        status: "active",
-        access_code: accessCode,
-        monitoring_tier: payload.monitoring_tier || "moderate",
-        plan_tier: payload.plan_tier || "free",
-        consent_given: payload.consent_given ?? true,
-      })
-      .select("id")
-      .single();
+    // If patient was already created on Step 1, update to active
+    if (patientId) {
+      const { error: updateError } = await supabase
+        .from("patients")
+        .update({
+          status: "active",
+          monitoring_tier: payload.monitoring_tier || "moderate",
+          plan_tier: payload.plan_tier || "free",
+          consent_given: payload.consent_given ?? true,
+          raw_history_text: payload.raw_history_text || null,
+        })
+        .eq("id", patientId);
 
-    if (patientError || !patient) {
-      return { error: patientError?.message || "Failed to create patient record." };
+      if (updateError) {
+        return { error: updateError.message };
+      }
+    } else {
+      // Direct enrolment without Step 1 intermediate save
+      const serviceClient = getServiceClient();
+      const credentials = await generatePatientCredentials(
+        payload.full_name,
+        Number(payload.age) || 45,
+        async (candidate) => {
+          const { data } = await serviceClient
+            .from("patients")
+            .select("id")
+            .eq("username", candidate)
+            .maybeSingle();
+          return Boolean(data);
+        }
+      );
+
+      finalUsername = credentials.username;
+      finalPlainPassword = credentials.plainPassword;
+
+      const { data: newPatient, error: insertError } = await supabase
+        .from("patients")
+        .insert({
+          hospital_id: profile.hospital_id,
+          department_id: payload.department_id || null,
+          full_name: payload.full_name,
+          age: Number(payload.age) || 45,
+          sex: payload.sex,
+          patient_phone: payload.patient_phone,
+          caregiver_name: payload.caregiver_name || null,
+          caregiver_relation: payload.caregiver_relation || null,
+          caregiver_phone: payload.caregiver_phone || null,
+          discharge_date: payload.discharge_date,
+          raw_history_text: payload.raw_history_text || null,
+          status: "active",
+          username: credentials.username,
+          password_hash: credentials.passwordHash,
+          monitoring_tier: payload.monitoring_tier || "moderate",
+          plan_tier: payload.plan_tier || "free",
+          consent_given: payload.consent_given ?? true,
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !newPatient) {
+        return { error: insertError?.message || "Failed to create patient record." };
+      }
+      patientId = newPatient.id;
     }
 
-    // 2. Insert confirmed clinical record
+    // 2. Upsert confirmed clinical record
     const { error: recordError } = await supabase
       .from("patient_records")
-      .insert({
-        patient_id: patient.id,
+      .upsert({
+        patient_id: patientId,
         hospital_id: profile.hospital_id,
         diagnosis: payload.diagnosis,
         medications: payload.medications,
@@ -102,13 +244,13 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
       });
 
     if (recordError) {
-      return { error: `Patient enrolled but record failed: ${recordError.message}` };
+      return { error: `Patient enrolled but clinical record failed: ${recordError.message}` };
     }
 
     // 3. Generate Phase 3 Monitoring Plan & Multilingual Check-ins
     const plan = await generateMonitoringPlan({
       patient_name: payload.full_name,
-      age: payload.age,
+      age: Number(payload.age) || 45,
       sex: payload.sex,
       diagnosis: payload.diagnosis,
       medications: payload.medications,
@@ -118,23 +260,24 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
 
     // Save monitoring plan
     await supabase.from("monitoring_plans").insert({
-      patient_id: patient.id,
+      patient_id: patientId,
       hospital_id: profile.hospital_id,
       risk_tier: plan.risk_tier,
       window_days: plan.window_days,
       schedule: plan.schedule,
       focus_areas: plan.focus_areas,
       red_flag_symptoms: plan.red_flag_symptoms,
-      model_name: "gemini-3.5-flash",
+      model_name: process.env.GEMINI_MODEL || "gemini-3.5-flash",
+      prompt_version: "v1",
     });
 
-    // Generate initial 7 daily check-in rows
+    // Save 7 scheduled daily check-ins
     const now = new Date();
     const checkinRows = [];
     for (let day = 1; day <= 7; day++) {
       const scheduledDate = new Date(now.getTime() + (day - 1) * 24 * 60 * 60 * 1000);
       checkinRows.push({
-        patient_id: patient.id,
+        patient_id: patientId,
         hospital_id: profile.hospital_id,
         scheduled_day: day,
         scheduled_for: scheduledDate.toISOString(),
@@ -145,8 +288,8 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
 
     await supabase.from("checkins").insert(checkinRows);
 
-    // 4. Write Audit Log
-    await writeAudit("ENROL", "patients", patient.id);
+    // 4. Audit Log
+    await writeAudit("ENROL_PATIENT", "patients", patientId);
 
     revalidatePath("/app/patients");
     revalidatePath("/app/departments");
@@ -154,29 +297,28 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
 
     return {
       success: true,
-      patientId: patient.id,
-      accessCode: accessCode,
-      monitoringTier: payload.monitoring_tier || "moderate",
+      patientId,
+      username: finalUsername,
+      plainPassword: finalPlainPassword,
     };
   } catch (err: any) {
-    return { error: err.message || "An unexpected error occurred during patient enrollment." };
+    return { error: err.message || "An unexpected error occurred during enrollment." };
   }
 }
 
-export async function enrolBatchPatients(patients: EnrolPatientPayload[]) {
+/**
+ * Reset Patient's Chat Action
+ * Clears chat_messages, responses, checkins, and alerts for this patient,
+ * then regenerates the first check-in so staff can repeat demos.
+ */
+export async function resetPatientChatAction(patientId: string) {
   try {
-    if (!patients || patients.length === 0) {
-      return { error: "No patients provided for batch enrollment." };
-    }
-
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return { error: "Authentication required to enrol patients." };
-    }
+    if (!user) return { error: "Unauthorized" };
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -184,109 +326,182 @@ export async function enrolBatchPatients(patients: EnrolPatientPayload[]) {
       .eq("id", user.id)
       .single();
 
-    if (!profile?.hospital_id) {
-      return { error: "Hospital profile not found." };
-    }
+    if (!profile?.hospital_id) return { error: "Hospital not found" };
 
-    // 1. Prepare patient insert records
-    const patientRows = patients.map((p) => ({
-      hospital_id: profile.hospital_id,
-      department_id: p.department_id || null,
-      full_name: p.full_name || "Discharged Patient",
-      age: Number(p.age) || 50,
-      sex: p.sex || "Other",
-      patient_phone: p.patient_phone || "+91-9876543210",
-      caregiver_name: p.caregiver_name || null,
-      caregiver_relation: p.caregiver_relation || null,
-      caregiver_phone: p.caregiver_phone || null,
-      discharge_date: p.discharge_date || new Date().toISOString().split("T")[0],
-      raw_history_text: p.raw_history_text || null,
-      status: "active",
-      access_code: Math.floor(100000 + Math.random() * 900000).toString(),
-      monitoring_tier: p.monitoring_tier || "moderate",
-      plan_tier: p.plan_tier || "free",
-      consent_given: p.consent_given ?? true,
-    }));
-
-    const { data: insertedPatients, error: patientError } = await supabase
+    // Verify patient belongs to user hospital
+    const { data: patient } = await supabase
       .from("patients")
-      .insert(patientRows)
-      .select("id, access_code, full_name");
+      .select(`
+        id,
+        full_name,
+        age,
+        sex,
+        monitoring_tier,
+        patient_records (
+          diagnosis,
+          medications,
+          risk_factors
+        )
+      `)
+      .eq("id", patientId)
+      .eq("hospital_id", profile.hospital_id)
+      .single();
 
-    if (patientError || !insertedPatients) {
-      return { error: patientError?.message || "Failed to create batch patient records." };
-    }
+    if (!patient) return { error: "Patient not found in this hospital." };
 
-    // 2. Prepare clinical records for each inserted patient
-    const recordRows = insertedPatients.map((patient, index) => {
-      const source = patients[index];
-      return {
-        patient_id: patient.id,
-        hospital_id: profile.hospital_id,
-        diagnosis: source.diagnosis || "Post-Discharge Care Required",
-        medications: source.medications || [],
-        medical_history: source.medical_history || [],
-        risk_factors: source.risk_factors || [],
-        allergies: source.allergies || [],
-        follow_up_plan: source.follow_up_plan || null,
-        confirmed_by: user.id,
-        confirmed_at: new Date().toISOString(),
-      };
+    const serviceClient = getServiceClient();
+
+    // 1. Delete alerts, responses, checkins
+    await serviceClient.from("alerts").delete().eq("patient_id", patientId);
+    await serviceClient.from("responses").delete().eq("patient_id", patientId);
+    await serviceClient.from("checkins").delete().eq("patient_id", patientId);
+
+    // 2. Regenerate check-in
+    const record = Array.isArray(patient.patient_records)
+      ? patient.patient_records[0]
+      : patient.patient_records;
+
+    const plan = await generateMonitoringPlan({
+      patient_name: patient.full_name,
+      age: patient.age,
+      sex: patient.sex,
+      diagnosis: record?.diagnosis || "Recovery Check",
+      medications: (record?.medications as any) || [],
+      risk_factors: (record?.risk_factors as any) || [],
+      monitoring_tier: (patient.monitoring_tier as any) || "moderate",
     });
 
-    const { error: recordsError } = await supabase
-      .from("patient_records")
-      .insert(recordRows);
-
-    if (recordsError) {
-      return {
-        error: `Patients created, but clinical records failed: ${recordsError.message}`,
-      };
-    }
-
-    // 3. Generate initial check-ins for each patient
     const now = new Date();
-    const allCheckinRows: any[] = [];
-    for (let i = 0; i < insertedPatients.length; i++) {
-      const patient = insertedPatients[i];
-      const source = patients[i];
-      const plan = await generateMonitoringPlan({
-        patient_name: patient.full_name,
-        age: Number(source.age) || 50,
-        sex: source.sex,
-        diagnosis: source.diagnosis,
-        medications: source.medications,
-        risk_factors: source.risk_factors,
-        monitoring_tier: source.monitoring_tier || "moderate",
-      });
+    await serviceClient.from("checkins").insert({
+      patient_id: patientId,
+      hospital_id: profile.hospital_id,
+      scheduled_day: 1,
+      scheduled_for: now.toISOString(),
+      status: "active",
+      questions: plan.initial_questions,
+    });
 
-      for (let day = 1; day <= 7; day++) {
-        const scheduledDate = new Date(now.getTime() + (day - 1) * 24 * 60 * 60 * 1000);
-        allCheckinRows.push({
-          patient_id: patient.id,
+    revalidatePath(`/app/patients/${patientId}`);
+    revalidatePath("/app/dashboard");
+
+    return { success: true };
+  } catch (err: any) {
+    return { error: err.message || "Failed to reset patient chat." };
+  }
+}
+
+/**
+ * Batch Enrol Patients
+ */
+export async function batchEnrolPatients(patients: any[]) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return { error: "Authentication required." };
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("hospital_id")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.hospital_id) return { error: "Hospital profile not found." };
+
+    const serviceClient = getServiceClient();
+
+    // Insert patients with generated credentials
+    const insertedPatients = [];
+    for (const p of patients) {
+      const credentials = await generatePatientCredentials(
+        p.full_name || "Discharged Patient",
+        Number(p.age) || 45,
+        async (candidate) => {
+          const { data } = await serviceClient
+            .from("patients")
+            .select("id")
+            .eq("username", candidate)
+            .maybeSingle();
+          return Boolean(data);
+        }
+      );
+
+      const { data: newP } = await supabase
+        .from("patients")
+        .insert({
           hospital_id: profile.hospital_id,
-          scheduled_day: day,
-          scheduled_for: scheduledDate.toISOString(),
-          status: day === 1 ? "active" : "scheduled",
-          questions: plan.initial_questions,
-        });
+          department_id: p.department_id || null,
+          full_name: p.full_name || "Discharged Patient",
+          age: Number(p.age) || 45,
+          sex: p.sex || "Other",
+          patient_phone: p.patient_phone || "+91-9876543210",
+          caregiver_name: p.caregiver_name || null,
+          caregiver_relation: p.caregiver_relation || null,
+          caregiver_phone: p.caregiver_phone || null,
+          discharge_date: p.discharge_date || new Date().toISOString().split("T")[0],
+          raw_history_text: p.raw_history_text || null,
+          status: "active",
+          username: credentials.username,
+          password_hash: credentials.passwordHash,
+          monitoring_tier: p.monitoring_tier || "moderate",
+          plan_tier: p.plan_tier || "free",
+          consent_given: p.consent_given ?? true,
+        })
+        .select("id, full_name, username")
+        .single();
+
+      if (newP) {
+        insertedPatients.push({ ...newP, source: p });
       }
     }
 
-    if (allCheckinRows.length > 0) {
-      await supabase.from("checkins").insert(allCheckinRows);
+    // Insert clinical records and checkins
+    const now = new Date();
+    for (const item of insertedPatients) {
+      await supabase.from("patient_records").insert({
+        patient_id: item.id,
+        hospital_id: profile.hospital_id,
+        diagnosis: item.source.diagnosis || "Post-Discharge Recovery",
+        medications: item.source.medications || [],
+        medical_history: item.source.medical_history || [],
+        risk_factors: item.source.risk_factors || [],
+        allergies: item.source.allergies || [],
+        follow_up_plan: item.source.follow_up_plan || null,
+        confirmed_by: user.id,
+        confirmed_at: new Date().toISOString(),
+      });
+
+      const plan = await generateMonitoringPlan({
+        patient_name: item.full_name,
+        age: Number(item.source.age) || 45,
+        sex: item.source.sex,
+        diagnosis: item.source.diagnosis,
+        medications: item.source.medications,
+        risk_factors: item.source.risk_factors,
+        monitoring_tier: item.source.monitoring_tier || "moderate",
+      });
+
+      await supabase.from("checkins").insert({
+        patient_id: item.id,
+        hospital_id: profile.hospital_id,
+        scheduled_day: 1,
+        scheduled_for: now.toISOString(),
+        status: "active",
+        questions: plan.initial_questions,
+      });
     }
 
-    // 4. Write batch audit log
     await writeAudit("BATCH_ENROL", "patients", `batch_${insertedPatients.length}`);
-
     revalidatePath("/app/patients");
-    revalidatePath("/app/departments");
     revalidatePath("/app/dashboard");
 
     return { success: true, count: insertedPatients.length };
   } catch (err: any) {
-    return { error: err.message || "An unexpected error occurred during batch enrollment." };
+    return { error: err.message || "Failed batch enrollment." };
   }
 }
+
+export const enrolBatchPatients = batchEnrolPatients;
 

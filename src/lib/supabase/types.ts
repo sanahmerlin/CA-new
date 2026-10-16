@@ -113,6 +113,8 @@ export interface Database {
           plan_tier: string;
           consent_given: boolean;
           monitoring_tier: string;
+          username: string | null;
+          password_hash: string | null;
           created_at: string;
         };
         Insert: {
@@ -133,6 +135,8 @@ export interface Database {
           plan_tier?: string;
           consent_given?: boolean;
           monitoring_tier?: string;
+          username?: string | null;
+          password_hash?: string | null;
           created_at?: string;
         };
         Update: {
@@ -153,6 +157,8 @@ export interface Database {
           plan_tier?: string;
           consent_given?: boolean;
           monitoring_tier?: string;
+          username?: string | null;
+          password_hash?: string | null;
           created_at?: string;
         };
         Relationships: [

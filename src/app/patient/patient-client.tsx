@@ -16,23 +16,22 @@ import {
   Loader2,
   Calendar,
   Sparkles,
+  LogOut,
+  Clock,
+  Activity,
 } from "lucide-react";
-import { getPatientPortalData, submitPatientCheckin } from "./actions";
+import { getPatientPortalDataFromSession, submitPatientCheckinFromSession, logoutPatientAction } from "./actions";
 
 interface Props {
-  initialCode?: string;
-  initialData?: any;
+  initialData: any;
 }
 
-export function PatientClient({ initialCode = "", initialData = null }: Props) {
+export function PatientClient({ initialData }: Props) {
   const [lang, setLang] = useState<"en" | "ml" | "hi">("en");
-  const [code, setCode] = useState(initialCode);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Portal State
+  const [isPending, setIsPending] = useState<boolean>(initialData?.isPending ?? false);
   const [patientData, setPatientData] = useState<any>(initialData?.patient || null);
   const [checkin, setCheckin] = useState<any>(initialData?.checkin || null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // Answers State
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -43,31 +42,28 @@ export function PatientClient({ initialCode = "", initialData = null }: Props) {
   // Speech Recognition state
   const [isListening, setIsListening] = useState(false);
 
-  // Automatically fetch if initial code provided but not yet loaded
+  // ----------------------------------------------------------------------------
+  // Realtime Polling: Check every 2 seconds when in PENDING state
+  // Automatically switches to questions when doctor confirms enrolment
+  // ----------------------------------------------------------------------------
   useEffect(() => {
-    if (initialCode && initialCode.length === 6 && !patientData) {
-      handleLookup(initialCode);
-    }
-  }, [initialCode]);
+    if (!isPending) return;
 
-  const handleLookup = async (codeToLookup: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await getPatientPortalData(codeToLookup);
-      if (res.error) {
-        setError(res.error);
-        setPatientData(null);
-      } else {
-        setPatientData(res.patient);
-        setCheckin(res.checkin);
+    const interval = setInterval(async () => {
+      try {
+        const res = await getPatientPortalDataFromSession();
+        if (res.success && !res.isPending && res.checkin) {
+          setPatientData(res.patient);
+          setCheckin(res.checkin);
+          setIsPending(false);
+        }
+      } catch {
+        // Silent catch during periodic background poll
       }
-    } catch (e: any) {
-      setError(e.message || "Failed to reach server");
-    } finally {
-      setLoading(false);
-    }
-  };
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isPending]);
 
   // Text-To-Speech (Web Speech API)
   const speakText = (text: string) => {
@@ -98,7 +94,10 @@ export function PatientClient({ initialCode = "", initialData = null }: Props) {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = lang === "ml" ? "ml-IN" : lang === "hi" ? "hi-IN" : "en-US";
+    if (lang === "ml") recognition.lang = "ml-IN";
+    else if (lang === "hi") recognition.lang = "hi-IN";
+    else recognition.lang = "en-US";
+
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -109,289 +108,294 @@ export function PatientClient({ initialCode = "", initialData = null }: Props) {
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setFreeText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      setIsListening(false);
     };
 
     recognition.start();
   };
 
   const handleAnswerChange = (questionId: string, value: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    setAnswers((prev) => ({
+      ...prev,
+      [questionId]: value,
+    }));
   };
 
   const handleSubmit = async () => {
     if (!checkin) return;
+
     setIsSubmitting(true);
-    setError(null);
+    try {
+      const res = await submitPatientCheckinFromSession({
+        checkinId: checkin.id,
+        answers,
+        freeText,
+        questions: checkin.questions || [],
+      });
 
-    const res = await submitPatientCheckin({
-      accessCode: code,
-      checkinId: checkin.id,
-      answers,
-      freeText,
-      questions: checkin.questions || [],
-    });
-
-    setIsSubmitting(false);
-
-    if (res.error) {
-      setError(res.error);
-    } else {
-      setResult(res);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (res.error) {
+        alert(res.error);
+      } else {
+        setResult({
+          severity: res.severity,
+          adviceToPatient: res.adviceToPatient,
+          clinicalSummary: res.clinicalSummary,
+          hasCritical: res.severity === "critical",
+          hasUrgent: res.severity === "urgent",
+          planTier: patientData?.planTier || "free",
+        });
+      }
+    } catch {
+      alert("Failed to submit check-in. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Translations for Portal Interface
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    await logoutPatientAction();
+  };
+
+  // UI translations
   const UI = {
-    en: {
-      portalTitle: "Post-Discharge Recovery Portal",
-      subTitle: "Daily Health Check-in & Recovery Guidance",
-      codePrompt: "Enter your 6-digit patient access code from your discharge sheet:",
-      codePlaceholder: "e.g. 482913",
-      accessBtn: "Access Check-in",
-      welcome: "Welcome",
-      dayCheckin: "Day Check-in",
-      medsHeader: "Prescribed Recovery Medicines:",
-      speakQuestion: "Listen",
-      additionalComments: "Any additional symptoms or notes for the doctor?",
-      listeningPrompt: "Listening... speak now",
-      speakMic: "Speak Answer",
-      submitCheckin: "Submit Today's Check-in",
-      completedTitle: "Check-in Submitted Successfully",
-      allNormal: "Your reported vitals and symptoms are normal. Keep resting and taking medications as prescribed.",
-      criticalAlert: "Important: Clinical Red Flags Detected",
-      criticalAdvice: "Please contact or visit the hospital emergency department immediately.",
-      urgentAdvice: "Your symptoms indicate elevated concern. Our care team will review your report shortly.",
-      callAmbulance: "Call Ambulance (108)",
-      callHospital: "Call Hospital Helpline",
-      doctorHotline: "Call On-Call Doctor (Pro Plan)",
-      changeCode: "Log out / Change Code",
-    },
-    ml: {
-      portalTitle: "രോഗമുക്തി ആരോഗ്യ പോർട്ടൽ",
-      subTitle: "ദിവസേനയുള്ള ആരോഗ്യ പരിശോധനയും നിർദ്ദേശങ്ങളും",
-      codePrompt: "നിങ്ങളുടെ ഡിസ്ചാർജ് രേഖയിലെ 6 അക്ക കോഡ് ഇവിടെ നൽകുക:",
-      codePlaceholder: "ഉദാഹരണം: 482913",
-      accessBtn: "പരിശോധന തുടങ്ങുക",
-      welcome: "സ്വാഗതം",
-      dayCheckin: "ദിവസത്തെ പരിശോധന",
-      medsHeader: "നിർദ്ദേശിച്ച മരുന്നുകൾ:",
-      speakQuestion: "കേൾക്കുക",
-      additionalComments: "ഡോക്ടറോട് എന്തെങ്കിലും പറയാനുണ്ടോ?",
-      listeningPrompt: "ശ്രദ്ധിക്കുന്നു... സംസാരിക്കുക",
-      speakMic: "സംസാരിക്കുക",
-      submitCheckin: "വിവരങ്ങൾ സമർപ്പിക്കുക",
-      completedTitle: "വിവരങ്ങൾ വിജയകരമായി സമർപ്പിച്ചു",
-      allNormal: "നിങ്ങളുടെ ആരോഗ്യനില തൃപ്തികരമാണ്. മരുന്നുകൾ കൃത്യമായി കഴിച്ച് വിശ്രമിക്കുക.",
-      criticalAlert: "ശ്രദ്ധിക്കുക: അടിയന്തിര ലക്ഷണങ്ങൾ കണ്ടെത്തി",
-      criticalAdvice: "ദയവായി ഉടൻ തന്നെ ആശുപത്രി അത്യാഹിത വിഭാഗവുമായി ബന്ധപ്പെടുകയോ സന്ദർശിക്കുകയോ ചെയ്യുക.",
-      urgentAdvice: "ലക്ഷണങ്ങൾ അടിയന്തിര ശ്രദ്ധ ആവശ്യപ്പെടുന്നു. ഞങ്ങളുടെ മെഡിക്കൽ സംഘം ഉടൻ പരിശോധിക്കും.",
-      callAmbulance: "ആംബുലൻസ് വിളിക്കുക (108)",
-      callHospital: "ആശുപത്രിയിലേക്ക് വിളിക്കുക",
-      doctorHotline: "ഡോക്ടറുമായി നേരിട്ട് സംസാരിക്കുക (Pro)",
-      changeCode: "മറ്റൊരു കോഡ് നൽകുക",
-    },
-    hi: {
-      portalTitle: "डिस्चार्ज रिकवरी पोर्टल",
-      subTitle: "दैनिक स्वास्थ्य जांच और रिकवरी मार्गदर्शन",
-      codePrompt: "डिस्चार्ज पर्ची पर दिया गया 6 अंकों का कोड दर्ज करें:",
-      codePlaceholder: "उदाहरण: 482913",
-      accessBtn: "चेक-इन शुरू करें",
-      welcome: "स्वागत है",
-      dayCheckin: "दिन का चेक-इन",
-      medsHeader: "निर्धारित दवाइयां:",
-      speakQuestion: "सुनें",
-      additionalComments: "क्या डॉक्टर के लिए कोई अन्य लक्षण या टिप्पणी है?",
-      listeningPrompt: "सुन रहे हैं... बोलिए",
-      speakMic: "बोलकर बताएं",
-      submitCheckin: "आज का चेक-इन जमा करें",
-      completedTitle: "चेक-इन सफलतापूर्वक पूरा हुआ",
-      allNormal: "आपके लक्षण सामान्य हैं। दवाइयां समय पर लें और आराम करें।",
-      criticalAlert: "सावधानी: गंभीर लक्षण पाए गए",
-      criticalAdvice: "कृपया तुरंत अस्पताल के आपातकालीन विभाग से संपर्क करें या जाएं।",
-      urgentAdvice: "आपके लक्षणों पर ध्यान देने की आवश्यकता है। हमारी देखभाल टीम जल्द समीक्षा करेगी।",
-      callAmbulance: "एंबुलेंस को कॉल करें (108)",
-      callHospital: "अस्पताल हेल्पलाइन पर कॉल करें",
-      doctorHotline: "डॉक्टर से सीधे बात करें (Pro)",
-      changeCode: "कोड बदलें",
-    },
-  }[lang];
+    dailyCheckin:
+      lang === "ml"
+        ? "പ്രതിദിന സുഖവിവര പരിശോധന"
+        : lang === "hi"
+        ? "दैनिक स्वास्थ्य जांच"
+        : "Daily Recovery Check-In",
+    welcomeBack:
+      lang === "ml"
+        ? `സ്വാഗതം, ${patientData?.fullName || "രോഗി"}`
+        : lang === "hi"
+        ? `नमस्ते, ${patientData?.fullName || "मरीज़"}`
+        : `Welcome, ${patientData?.fullName || "Patient"}`,
+    additionalComments:
+      lang === "ml"
+        ? "മറ്റ് ലക്ഷണങ്ങൾ / ബുദ്ധിമുട്ടുകൾ:"
+        : lang === "hi"
+        ? "कोई अन्य लक्षण या असुविधा:"
+        : "Any additional symptoms or concerns:",
+    speakMic:
+      lang === "ml" ? "സംസാരിക്കുക" : lang === "hi" ? "बोलकर बताएं" : "Voice reply",
+    listeningPrompt:
+      lang === "ml" ? "കേൾക്കുന്നു..." : lang === "hi" ? "सुन रहे हैं..." : "Listening...",
+    submitCheckin:
+      lang === "ml"
+        ? "പരിശോധന സമർപ്പിക്കുക"
+        : lang === "hi"
+        ? "उत्तर भेजें"
+        : "Submit Check-In",
+    allNormal:
+      lang === "ml"
+        ? "നിങ്ങളുടെ മറുപടികൾ സാധാരണമാണ്. നിർദ്ദേശിച്ച മരുന്നുകൾ കൃത്യമായി കഴിക്കുക."
+        : lang === "hi"
+        ? "आपकी स्थिति सामान्य लग रही है। अपनी दवाएं समय पर लेते रहें।"
+        : "Your recovery appears on track. Continue prescribed medications and rest.",
+    urgentAdvice:
+      lang === "ml"
+        ? "ശ്രദ്ധിക്കുക: നിങ്ങളുടെ വിവരങ്ങൾ ഡോക്ടർക്ക് അയച്ചിട്ടുണ്ട്. ആശുപത്രിക്കുമായി ബന്ധപ്പെടുക."
+        : lang === "hi"
+        ? "सावधानी: आपके लक्षणों के बारे में अस्पताल को सूचित कर दिया गया है।"
+        : "Alert: Concerning symptoms flagged. Hospital care team notified.",
+    criticalAdvice:
+      lang === "ml"
+        ? "അടിയന്തര മുന്നറിയിപ്പ്: ദയവായി ഉടൻ 108 ആംബുലൻസിലോ ആശുപത്രിയിലോ വിളിക്കുക!"
+        : lang === "hi"
+        ? "आपातकालीन चेतावनी: कृपया तुरंत 108 एम्बुलेंस या अस्पताल से संपर्क करें!"
+        : "CRITICAL: Please seek immediate emergency medical care or call 108!",
+    callAmbulance:
+      lang === "ml" ? "108 ആംബുലൻസ്" : lang === "hi" ? "108 एम्बुलेंस" : "Emergency Ambulance",
+    callHospital:
+      lang === "ml"
+        ? "ആശുപത്രി സഹായം"
+        : lang === "hi"
+        ? "अस्पताल सहायता"
+        : "Hospital Helpline",
+    doctorHotline:
+      lang === "ml"
+        ? "ഓൺ-കോൾ ഡോക്ടർ"
+        : lang === "hi"
+        ? "ऑन-कॉल डॉक्टर"
+        : "On-Call Attending Doctor",
+    completedTitle:
+      lang === "ml"
+        ? "പരിശോധന പൂർത്തിയായി"
+        : lang === "hi"
+        ? "जांच पूर्ण हुई"
+        : "Check-In Recorded",
+    criticalAlert:
+      lang === "ml"
+        ? "ഗുരുതരമായ മുന്നറിയിപ്പ്!"
+        : lang === "hi"
+        ? "गंभीर चेतावनी!"
+        : "Critical Health Alert!",
+    logout:
+      lang === "ml" ? "പുറത്തുകടക്കുക" : lang === "hi" ? "लॉग आउट" : "Log out",
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center p-3 sm:p-6 text-slate-800">
-      {/* Container restricted to mobile width (ideal for smartphones & QR demo) */}
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden flex flex-col">
-        {/* Top Branding & Language Bar */}
-        <div className="bg-teal-700 text-white p-4 flex items-center justify-between">
+    <div className="min-h-screen bg-gradient-to-b from-teal-50/40 via-slate-50 to-slate-100 flex flex-col justify-between font-sans">
+      <div className="w-full max-w-md mx-auto min-h-screen flex flex-col bg-white sm:border-x border-slate-200 shadow-xl">
+        
+        {/* Top Navbar */}
+        <header className="bg-white border-b border-slate-100 px-4 py-3 sticky top-0 z-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <HeartPulse className="h-6 w-6 text-teal-300" />
+            <div className="h-8 w-8 rounded-lg bg-teal-600 flex items-center justify-center text-white shadow-xs">
+              <HeartPulse className="h-5 w-5" />
+            </div>
             <div>
-              <h1 className="text-base font-bold tracking-tight leading-none">
-                CareAfter
+              <h1 className="text-xs font-bold text-slate-800 tracking-tight leading-tight">
+                {patientData?.hospitalName || "CareAfter"}
               </h1>
-              <p className="text-[11px] text-teal-200 mt-0.5">
-                {UI.portalTitle}
-              </p>
+              <p className="text-[10px] text-teal-700 font-medium">Post-Discharge Recovery</p>
             </div>
           </div>
 
-          {/* Multilingual Switcher */}
-          <div className="flex items-center gap-1 bg-teal-800/80 p-1 rounded-lg border border-teal-600/50 text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            {/* Language Switcher */}
+            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setLang("en")}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  lang === "en" ? "bg-white text-teal-700 shadow-xs" : "text-slate-500"
+                }`}
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                onClick={() => setLang("ml")}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  lang === "ml" ? "bg-white text-teal-700 shadow-xs" : "text-slate-500"
+                }`}
+              >
+                മല
+              </button>
+              <button
+                type="button"
+                onClick={() => setLang("hi")}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  lang === "hi" ? "bg-white text-teal-700 shadow-xs" : "text-slate-500"
+                }`}
+              >
+                हिं
+              </button>
+            </div>
+
+            {/* Logout Button */}
             <button
               type="button"
-              onClick={() => setLang("en")}
-              className={`px-2 py-0.5 rounded transition-all ${
-                lang === "en" ? "bg-white text-teal-900 shadow-xs" : "text-teal-200 hover:text-white"
-              }`}
+              onClick={handleLogout}
+              disabled={loggingOut}
+              title="Log out"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
             >
-              EN
-            </button>
-            <button
-              type="button"
-              onClick={() => setLang("ml")}
-              className={`px-2 py-0.5 rounded transition-all ${
-                lang === "ml" ? "bg-white text-teal-900 shadow-xs" : "text-teal-200 hover:text-white"
-              }`}
-            >
-              മലയാളം
-            </button>
-            <button
-              type="button"
-              onClick={() => setLang("hi")}
-              className={`px-2 py-0.5 rounded transition-all ${
-                lang === "hi" ? "bg-white text-teal-900 shadow-xs" : "text-teal-200 hover:text-white"
-              }`}
-            >
-              हिंदी
+              <LogOut className="h-4 w-4" />
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* View 1: Enter 6-Digit PIN if not logged in */}
-        {!patientData && (
-          <div className="p-6 space-y-6">
-            <div className="text-center space-y-2">
-              <div className="inline-flex p-3 bg-teal-50 text-teal-600 rounded-full border border-teal-100 mb-1">
-                <Globe2 className="h-7 w-7" />
+        {/* ====================================================================== */}
+        {/* VIEW 1: PENDING STATE (Waiting for Doctor Confirmation & Enrolment)    */}
+        {/* ====================================================================== */}
+        {isPending && (
+          <div className="flex-1 p-6 flex flex-col justify-center items-center text-center space-y-6">
+            {/* Animated Pulser */}
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full bg-teal-100 animate-ping absolute inset-0 opacity-40" />
+              <div className="w-20 h-20 rounded-full bg-teal-600 text-white flex items-center justify-center relative shadow-lg shadow-teal-600/30">
+                <Clock className="w-10 h-10 animate-pulse" />
               </div>
-              <h2 className="text-lg font-bold text-slate-900">
-                {UI.subTitle}
+            </div>
+
+            <div className="space-y-2 max-w-xs">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                <Activity className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                <span>Account Created (Step 1)</span>
+              </span>
+              <h2 className="text-lg font-bold text-slate-800 pt-1">
+                Your hospital is setting up your care plan...
               </h2>
               <p className="text-xs text-slate-500 leading-relaxed">
-                {UI.codePrompt}
+                Welcome, <strong>{patientData?.fullName}</strong>. The clinical team at <strong>{patientData?.hospitalName}</strong> is reviewing your discharge summary and tailoring your recovery check-ins.
               </p>
             </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleLookup(code);
-              }}
-              className="space-y-4"
-            >
-              <input
-                type="text"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                placeholder={UI.codePlaceholder}
-                className="w-full text-center text-2xl tracking-widest font-mono font-bold py-3.5 px-4 rounded-xl border-2 border-slate-300 focus:border-teal-500 focus:outline-none bg-slate-50 focus:bg-white"
-              />
+            <div className="w-full bg-slate-50 rounded-xl p-4 border border-slate-200 text-left space-y-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <Sparkles className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>Live Connection Active</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                As soon as your attending doctor clicks <strong>Confirm & Enrol</strong>, your questions will appear right here automatically without needing to refresh this screen.
+              </p>
+            </div>
 
-              {error && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading || code.trim().length !== 6}
-                className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Loading Patient Record...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>{UI.accessBtn}</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="text-[11px] text-slate-400 text-center pt-4 border-t border-slate-100">
-              Demo Portal • Secure Patient Check-in
+            {/* Emergency Hotline reminder */}
+            <div className="w-full pt-4 border-t border-slate-100 text-xs text-slate-400">
+              <p>Hospital helpline: <a href={`tel:${patientData?.hospitalPhone}`} className="text-teal-700 font-semibold underline">{patientData?.hospitalPhone || "+91-484-2800100"}</a></p>
             </div>
           </div>
         )}
 
-        {/* View 2: Active Check-in Questionnaire */}
-        {patientData && !result && (
-          <div className="p-4 sm:p-5 space-y-5">
+        {/* ====================================================================== */}
+        {/* VIEW 2: ACTIVE CHECK-IN (Questions Available)                         */}
+        {/* ====================================================================== */}
+        {!isPending && !result && checkin && (
+          <div className="p-4 space-y-5 flex-1">
             {/* Patient Header Banner */}
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 flex items-center justify-between">
-              <div>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  {UI.welcome},
-                </p>
-                <h2 className="text-sm font-bold text-slate-900">
-                  {patientData.fullName}
-                </h2>
-                <p className="text-[10px] text-teal-700 font-medium mt-0.5">
-                  {patientData.diagnosis}
-                </p>
-              </div>
-
-              <div className="text-right">
-                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
-                  Day {checkin?.scheduled_day || 1}
+            <div className="bg-gradient-to-r from-teal-700 to-teal-900 rounded-2xl p-4 text-white shadow-sm space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
+                  Day {checkin.scheduled_day || 1} Follow-Up
                 </span>
-                {patientData.planTier === "pro" && (
-                  <span className="block text-[10px] font-bold text-amber-700 mt-1">
-                    ★ Pro Plan
-                  </span>
-                )}
+                <span className="text-xs font-medium text-teal-200">
+                  {patientData?.planTier === "pro" ? "CareAfter Pro VIP" : "CareAfter Free"}
+                </span>
               </div>
+              <h2 className="text-base font-bold tracking-tight">{UI.welcomeBack}</h2>
+              <p className="text-xs text-teal-100 line-clamp-1">{patientData?.diagnosis}</p>
             </div>
 
             {/* Questions List */}
             <div className="space-y-4">
-              {checkin?.questions?.map((q: any, idx: number) => {
-                const qText = q.text[lang] || q.text.en;
-                const isAnswered = Boolean(answers[q.id]);
+              {checkin.questions?.map((q: any, idx: number) => {
+                const questionText = q.text?.[lang] || q.text?.en || q.topic;
                 const selectedVal = answers[q.id];
-                const isConcern = q.concern_if?.includes(selectedVal);
+                const isConcern =
+                  selectedVal &&
+                  Array.isArray(q.concern_if) &&
+                  q.concern_if.includes(selectedVal);
 
                 return (
                   <div
-                    key={q.id}
+                    key={q.id || idx}
                     className={`p-4 rounded-xl border transition-all ${
                       isConcern
-                        ? "border-amber-300 bg-amber-50/40"
-                        : "border-slate-200 bg-white"
+                        ? "bg-amber-50/70 border-amber-300 shadow-xs"
+                        : selectedVal
+                        ? "bg-teal-50/40 border-teal-200"
+                        : "bg-white border-slate-200"
                     }`}
                   >
-                    {/* Question Header & Audio TTS Button */}
+                    {/* Question Header & Voice Read Button */}
                     <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-start gap-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold shrink-0 mt-0.5">
-                          {idx + 1}
+                      <div className="space-y-0.5 flex-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700">
+                          Question {idx + 1}
                         </span>
-                        <p className="text-xs font-semibold text-slate-900 leading-snug">
-                          {qText}
+                        <p className="text-sm font-semibold text-slate-800 leading-snug">
+                          {questionText}
                         </p>
                       </div>
-
                       <button
                         type="button"
-                        onClick={() => speakText(qText)}
-                        className="text-teal-600 hover:text-teal-700 p-1 rounded-md hover:bg-teal-50 shrink-0"
-                        title={UI.speakQuestion}
+                        onClick={() => speakText(questionText)}
+                        title="Read question aloud"
+                        className="text-slate-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
                       >
                         <Volume2 className="h-4 w-4" />
                       </button>
@@ -511,7 +515,7 @@ export function PatientClient({ initialCode = "", initialData = null }: Props) {
                 rows={2}
                 value={freeText}
                 onChange={(e) => setFreeText(e.target.value)}
-                placeholder="Type or speak anything unusual..."
+                placeholder="Type or speak any symptoms or questions..."
                 className="w-full text-xs rounded-lg border border-slate-200 p-2.5 focus:ring-2 focus:ring-teal-500 focus:outline-none"
               />
             </div>
@@ -538,9 +542,11 @@ export function PatientClient({ initialCode = "", initialData = null }: Props) {
           </div>
         )}
 
-        {/* View 3: Triage Result & Escalation Guidance */}
+        {/* ====================================================================== */}
+        {/* VIEW 3: TRIAGE RESULT & ESCALATION GUIDANCE                           */}
+        {/* ====================================================================== */}
         {result && (
-          <div className="p-6 space-y-6">
+          <div className="p-6 space-y-6 flex-1">
             {/* Status Card */}
             <div
               className={`p-5 rounded-2xl border text-center space-y-3 ${
@@ -584,11 +590,11 @@ export function PatientClient({ initialCode = "", initialData = null }: Props) {
                 </p>
               </div>
 
-              {/* Clinical summary for patient context */}
-              {result.clinicalSummary && (
-                <div className="bg-white/80 p-3 rounded-xl text-left border border-black/5 text-xs text-slate-700">
-                  <span className="font-semibold block mb-0.5">Clinical Note:</span>
-                  <span>{result.clinicalSummary}</span>
+              {/* Advice Message to Patient */}
+              {result.adviceToPatient && (
+                <div className="bg-white/90 p-3 rounded-xl text-left border border-black/5 text-xs text-slate-800 space-y-1">
+                  <span className="font-semibold text-teal-800 block text-[11px]">Personalized Advice:</span>
+                  <p className="leading-relaxed">{result.adviceToPatient}</p>
                 </div>
               )}
             </div>
@@ -651,20 +657,20 @@ export function PatientClient({ initialCode = "", initialData = null }: Props) {
               type="button"
               onClick={() => {
                 setResult(null);
-                setPatientData(null);
-                setCode("");
+                setAnswers({});
+                setFreeText("");
               }}
-              className="w-full py-2.5 text-xs text-slate-500 hover:text-slate-800 font-semibold text-center border rounded-xl hover:bg-slate-50"
+              className="w-full py-2.5 text-xs text-slate-500 hover:text-slate-800 font-semibold text-center border rounded-xl hover:bg-slate-50 transition"
             >
-              {UI.changeCode}
+              Review or Update Answers
             </button>
           </div>
         )}
 
         {/* Footer info */}
-        <div className="p-3 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 text-center">
+        <footer className="p-3 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 text-center">
           CareAfter Patient Companion • Demo only. Not a medical device.
-        </div>
+        </footer>
       </div>
     </div>
   );
