@@ -11,6 +11,11 @@ export default async function DashboardPage() {
     .from("departments")
     .select("*", { count: "exact", head: true });
 
+  // Query enrolled patients count for the signed-in tenant hospital
+  const { count: patientCount } = await supabase
+    .from("patients")
+    .select("*", { count: "exact", head: true });
+
   return (
     <div className="space-y-8 max-w-6xl">
       {/* Page Header */}
@@ -35,8 +40,8 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-extrabold text-slate-900">0</span>
-            <span className="text-xs text-slate-400 ml-2">Phase 2 enrollment</span>
+            <span className="text-3xl font-extrabold text-slate-900">{patientCount ?? 0}</span>
+            <span className="text-xs text-slate-400 ml-2">Enrolled post-discharge</span>
           </div>
         </div>
 

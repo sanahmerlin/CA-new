@@ -6,6 +6,12 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+export interface Medication {
+  name: string;
+  dose: string;
+  frequency: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -81,6 +87,132 @@ export interface Database {
         Relationships: [
           {
             foreignKeyName: "departments_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      patients: {
+        Row: {
+          id: string;
+          hospital_id: string;
+          department_id: string | null;
+          full_name: string;
+          age: number;
+          sex: string;
+          patient_phone: string;
+          caregiver_name: string | null;
+          caregiver_relation: string | null;
+          caregiver_phone: string | null;
+          discharge_date: string;
+          raw_history_text: string | null;
+          status: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          hospital_id: string;
+          department_id?: string | null;
+          full_name: string;
+          age: number;
+          sex: string;
+          patient_phone: string;
+          caregiver_name?: string | null;
+          caregiver_relation?: string | null;
+          caregiver_phone?: string | null;
+          discharge_date?: string;
+          raw_history_text?: string | null;
+          status?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          hospital_id?: string;
+          department_id?: string | null;
+          full_name?: string;
+          age?: number;
+          sex?: string;
+          patient_phone?: string;
+          caregiver_name?: string | null;
+          caregiver_relation?: string | null;
+          caregiver_phone?: string | null;
+          discharge_date?: string;
+          raw_history_text?: string | null;
+          status?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "patients_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "patients_department_id_fkey";
+            columns: ["department_id"];
+            isOneToOne: false;
+            referencedRelation: "departments";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      patient_records: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hospital_id: string;
+          diagnosis: string;
+          medications: Json;
+          medical_history: Json;
+          risk_factors: Json;
+          allergies: Json;
+          follow_up_plan: string | null;
+          confirmed_by: string | null;
+          confirmed_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          hospital_id: string;
+          diagnosis: string;
+          medications?: Json;
+          medical_history?: Json;
+          risk_factors?: Json;
+          allergies?: Json;
+          follow_up_plan?: string | null;
+          confirmed_by?: string | null;
+          confirmed_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          patient_id?: string;
+          hospital_id?: string;
+          diagnosis?: string;
+          medications?: Json;
+          medical_history?: Json;
+          risk_factors?: Json;
+          allergies?: Json;
+          follow_up_plan?: string | null;
+          confirmed_by?: string | null;
+          confirmed_at?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "patient_records_patient_id_fkey";
+            columns: ["patient_id"];
+            isOneToOne: false;
+            referencedRelation: "patients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "patient_records_hospital_id_fkey";
             columns: ["hospital_id"];
             isOneToOne: false;
             referencedRelation: "hospitals";
