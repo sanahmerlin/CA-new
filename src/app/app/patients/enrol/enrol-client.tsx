@@ -22,10 +22,16 @@ import {
   Info,
   Layers,
   UserPlus,
+  QrCode,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  Check,
 } from "lucide-react";
 import { enrolPatient } from "../actions";
 import type { ExtractedHistory, Medication } from "@/lib/ai/extractHistory";
 import { BulkEnrolClient } from "./bulk-enrol-client";
+import { generateQrDataUrl } from "@/lib/qr";
 
 interface Department {
   id: string;
@@ -122,6 +128,18 @@ export function EnrolClient({
   const [confidenceNotes, setConfidenceNotes] = useState<string[]>([]);
   const [isFallback, setIsFallback] = useState(false);
 
+  // Phase 3 Parameters
+  const [monitoringTier, setMonitoringTier] = useState<"low" | "moderate" | "high">("moderate");
+  const [planTier, setPlanTier] = useState<"free" | "pro">("free");
+  const [consentGiven, setConsentGiven] = useState(true);
+  const [enrolledModal, setEnrolledModal] = useState<{
+    patientId: string;
+    accessCode: string;
+    fullName: string;
+    qrDataUrl: string;
+  } | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
   // Submission
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -179,6 +197,11 @@ export function EnrolClient({
       return;
     }
 
+    if (!consentGiven) {
+      setSubmitError("Patient consent must be obtained to initiate post-discharge digital monitoring.");
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -199,6 +222,9 @@ export function EnrolClient({
       risk_factors: riskFactors,
       allergies,
       follow_up_plan: followUpPlan,
+      monitoring_tier: monitoringTier,
+      plan_tier: planTier,
+      consent_given: consentGiven,
     };
 
     const res = await enrolPatient(payload);
@@ -206,6 +232,15 @@ export function EnrolClient({
 
     if (res.error) {
       setSubmitError(res.error);
+    } else if (res.patientId && res.accessCode) {
+      const portalUrl = `${window.location.origin}/patient?code=${res.accessCode}`;
+      const qrDataUrl = await generateQrDataUrl(portalUrl);
+      setEnrolledModal({
+        patientId: res.patientId,
+        accessCode: res.accessCode,
+        fullName,
+        qrDataUrl,
+      });
     } else if (res.patientId) {
       router.push(`/app/patients/${res.patientId}`);
     }
@@ -863,6 +898,70 @@ export function EnrolClient({
             </div>
           </div>
 
+          {/* Section 5: Phase 3 Monitoring Protocol & Patient Consent */}
+          <div className="p-4 rounded-xl border border-teal-200 bg-teal-50/30 space-y-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-teal-700" />
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Monitoring Protocol & Consent (Phase 3 Engine)
+              </h4>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Monitoring Tier based on length of stay */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Monitoring Tier (Length of Stay / Risk Window)
+                </label>
+                <select
+                  value={monitoringTier}
+                  onChange={(e) => setMonitoringTier(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white font-medium focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="low">Low Risk • 14–21 Days Window (Routine stay)</option>
+                  <option value="moderate">Moderate Risk • 30 Days Window (Standard stay)</option>
+                  <option value="high">High Risk • 60–90 Days Window (Complex / Cardiac stay)</option>
+                </select>
+              </div>
+
+              {/* Free vs Pro Tier */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Hospital Care Plan
+                </label>
+                <select
+                  value={planTier}
+                  onChange={(e) => setPlanTier(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white font-medium focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="free">Standard (Free) • Ambulance 108 & Hospital Helpline</option>
+                  <option value="pro">CareAfter Pro (VIP) • Dedicated On-Call Doctor Hotline</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Patient Consent Checkbox */}
+            <label className="flex items-start gap-2.5 pt-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={consentGiven}
+                onChange={(e) => setConsentGiven(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-xs text-slate-700 font-medium">
+                Patient has provided informed consent for AI-assisted post-discharge recovery monitoring, daily multilingual questionnaires, and automated triage alerts.
+              </span>
+            </label>
+          </div>
+
+          {/* Submission error if any */}
+          {submitError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{submitError}</span>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex items-center justify-between pt-6 border-t border-slate-100">
             <button
@@ -881,11 +980,91 @@ export function EnrolClient({
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
               <CheckCircle2 className="h-4 w-4" />
-              <span>{isSubmitting ? "Saving & Enrolling..." : "Confirm & Enrol Patient"}</span>
+              <span>{isSubmitting ? "Generating Plan & Enrolling..." : "Confirm & Enrol Patient"}</span>
             </button>
           </div>
         </div>
       )}
+        </div>
+      )}
+
+      {/* QR Code & Discharge Modal */}
+      {enrolledModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-5 shadow-2xl border border-slate-200">
+            <div className="inline-flex p-3 bg-emerald-100 text-emerald-700 rounded-full">
+              <CheckCircle2 className="h-8 w-8" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                Patient Successfully Enrolled!
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {enrolledModal.fullName} is now enrolled in CareAfter Post-Discharge Monitoring.
+              </p>
+            </div>
+
+            {/* QR Code */}
+            {enrolledModal.qrDataUrl && (
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 inline-block">
+                <img
+                  src={enrolledModal.qrDataUrl}
+                  alt="Scan to open Patient Portal"
+                  className="w-48 h-48 mx-auto rounded-lg"
+                />
+                <p className="text-[10px] text-slate-500 mt-1.5 font-medium">
+                  Scan with smartphone camera to open check-in
+                </p>
+              </div>
+            )}
+
+            {/* 6-Digit PIN */}
+            <div className="bg-teal-50 border border-teal-200 p-3 rounded-xl">
+              <span className="text-[11px] font-semibold text-teal-800 uppercase block">
+                Patient 6-Digit Access Code
+              </span>
+              <span className="text-2xl font-mono font-bold text-teal-900 tracking-widest">
+                {enrolledModal.accessCode}
+              </span>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2 pt-1">
+              <a
+                href={`/patient?code=${enrolledModal.accessCode}`}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors"
+              >
+                <span>Open Patient Portal (New Tab)</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `${window.location.origin}/patient?code=${enrolledModal.accessCode}`
+                  );
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2000);
+                }}
+                className="w-full py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                <span>{copiedLink ? "Link Copied!" : "Copy Portal Link"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => router.push(`/app/patients/${enrolledModal.patientId}`)}
+                className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-800"
+              >
+                View Patient Clinical Dashboard
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

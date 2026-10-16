@@ -15,8 +15,11 @@ import {
   CheckCircle2,
   Bell,
   Activity,
+  Sparkles,
+  QrCode,
 } from "lucide-react";
 import type { Medication } from "@/lib/ai/extractHistory";
+import { PatientQrButton } from "./patient-qr-button";
 
 export default async function PatientDetailPage({
   params,
@@ -54,6 +57,34 @@ export default async function PatientDetailPage({
     .eq("patient_id", id)
     .maybeSingle();
 
+  // Query monitoring plan
+  const { data: monitoringPlan } = await supabase
+    .from("monitoring_plans")
+    .select("*")
+    .eq("patient_id", id)
+    .maybeSingle();
+
+  // Query checkins and responses
+  const { data: checkins } = await supabase
+    .from("checkins")
+    .select(`
+      id,
+      scheduled_day,
+      scheduled_for,
+      status,
+      questions,
+      created_at
+    `)
+    .eq("patient_id", id)
+    .order("scheduled_day", { ascending: true });
+
+  // Query alerts
+  const { data: alerts } = await supabase
+    .from("alerts")
+    .select("*")
+    .eq("patient_id", id)
+    .order("created_at", { ascending: false });
+
   const medications: Medication[] = Array.isArray(record?.medications)
     ? (record.medications as any)
     : [];
@@ -88,7 +119,7 @@ export default async function PatientDetailPage({
               <User className="h-6 w-6" />
             </div>
             <div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                   {patient.full_name}
                 </h1>
@@ -96,7 +127,15 @@ export default async function PatientDetailPage({
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                   Active Monitoring
                 </span>
+
+                {patient.plan_tier === "pro" && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                    <Sparkles className="h-3 w-3 text-amber-600" />
+                    <span>CareAfter Pro VIP</span>
+                  </span>
+                )}
               </div>
+
               <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-500">
                 <span>{patient.age} years old</span>
                 <span>•</span>
@@ -114,12 +153,15 @@ export default async function PatientDetailPage({
             </div>
           </div>
 
-          <div className="text-right sm:border-l sm:border-slate-100 sm:pl-6 text-xs text-slate-500">
-            <div>Discharged: <span className="font-semibold text-slate-800">{patient.discharge_date}</span></div>
-            {patient.caregiver_name && (
-              <div className="mt-1 text-[11px]">
-                Caregiver: <span className="font-medium text-slate-700">{patient.caregiver_name} ({patient.caregiver_relation})</span>
-              </div>
+          <div className="flex flex-col sm:items-end gap-2 text-xs text-slate-500">
+            <div>
+              Discharged: <span className="font-semibold text-slate-800">{patient.discharge_date}</span>
+            </div>
+            {patient.access_code && (
+              <PatientQrButton
+                accessCode={patient.access_code}
+                patientName={patient.full_name}
+              />
             )}
           </div>
         </div>
@@ -147,7 +189,7 @@ export default async function PatientDetailPage({
           }`}
         >
           <Clock className="h-4 w-4" />
-          <span>Timeline (Phase 3)</span>
+          <span>Monitoring Timeline ({checkins?.length || 0})</span>
         </Link>
         <Link
           href={`/app/patients/${id}?tab=alerts`}
@@ -158,11 +200,11 @@ export default async function PatientDetailPage({
           }`}
         >
           <Bell className="h-4 w-4" />
-          <span>Alerts (Phase 4)</span>
+          <span>Priority Alerts ({alerts?.length || 0})</span>
         </Link>
       </div>
 
-      {/* TAB CONTENT */}
+      {/* TAB 1: OVERVIEW */}
       {tab === "overview" && (
         <div className="space-y-6">
           {/* Confirmed Record Banner */}
@@ -175,6 +217,42 @@ export default async function PatientDetailPage({
               <span className="text-[11px] text-emerald-600">
                 {new Date(record.confirmed_at).toLocaleString()}
               </span>
+            </div>
+          )}
+
+          {/* Monitoring Plan Summary (Phase 3) */}
+          {monitoringPlan && (
+            <div className="bg-white rounded-xl border border-teal-200 p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-teal-800">
+                  Phase 3 AI Monitoring Protocol
+                </span>
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
+                  {monitoringPlan.risk_tier} Risk • {monitoringPlan.window_days} Days Window
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[11px] font-medium">Focus Areas:</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(Array.isArray(monitoringPlan.focus_areas) ? (monitoringPlan.focus_areas as string[]) : []).map((fa: string, i: number) => (
+                      <span key={i} className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
+                        {fa}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px] font-medium">Red Flag Watch Symptoms:</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(Array.isArray(monitoringPlan.red_flag_symptoms) ? (monitoringPlan.red_flag_symptoms as string[]) : []).map((rf: string, i: number) => (
+                      <span key={i} className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[11px] border border-rose-100">
+                        {rf}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -269,66 +347,132 @@ export default async function PatientDetailPage({
               )}
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Allergies & Follow-up Plan */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-3">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4 text-red-500" />
-                <h3 className="text-sm font-bold text-slate-800">Documented Allergies</h3>
-              </div>
-              {allergies.length === 0 ? (
-                <p className="text-xs text-slate-400 italic">No known drug allergies (NKDA).</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {allergies.map((allergy, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-200"
-                    >
-                      {allergy}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-2">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-teal-600" />
-                <h3 className="text-sm font-bold text-slate-800">Follow-Up Plan</h3>
-              </div>
-              <p className="text-xs text-slate-700 leading-relaxed">
-                {record?.follow_up_plan || "No follow-up plan documented."}
+      {/* TAB 2: TIMELINE (PHASE 3 ACTIVE ENGINE) */}
+      {tab === "timeline" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Recovery Check-in Schedule
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pre-generated daily check-in cycles (English, Malayalam, Hindi)
               </p>
             </div>
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+              {checkins?.length || 0} Total Cycles
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {checkins?.map((cycle: any) => (
+              <div
+                key={cycle.id}
+                className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-teal-600 text-white text-xs font-bold">
+                      {cycle.scheduled_day}
+                    </span>
+                    <span className="text-xs font-bold text-slate-900">
+                      Day {cycle.scheduled_day} Check-in
+                    </span>
+                  </div>
+
+                  <span
+                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                      cycle.status === "answered"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : cycle.status === "active"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {cycle.status}
+                  </span>
+                </div>
+
+                {/* Questions Preview */}
+                <div className="bg-slate-50 rounded-lg p-3 space-y-1.5 border border-slate-100 text-xs">
+                  {cycle.questions?.map((q: any, qIdx: number) => (
+                    <div key={q.id || qIdx} className="flex items-start gap-1.5 text-slate-700">
+                      <span className="text-slate-400 font-medium">{qIdx + 1}.</span>
+                      <div>
+                        <p className="font-medium text-slate-900">{q.text?.en || q.text}</p>
+                        {q.text?.ml && (
+                          <p className="text-[11px] text-slate-500">{q.text.ml}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* TIMELINE TAB (PHASE 3) */}
-      {tab === "timeline" && (
-        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-16 text-center">
-          <Clock className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-base font-semibold text-slate-800">
-            Recovery Timeline Begins in Phase 3
-          </h3>
-          <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
-            In Phase 3, this timeline will log scheduled one-tap check-in questions, patient response submissions, and AI health assessments over the post-discharge recovery window.
-          </p>
-        </div>
-      )}
-
-      {/* ALERTS TAB (PHASE 4) */}
+      {/* TAB 3: ALERTS TAB */}
       {tab === "alerts" && (
-        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-16 text-center">
-          <Bell className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-base font-semibold text-slate-800">
-            Priority Alert History (Phase 4)
-          </h3>
-          <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
-            Red-flag symptom escalations, missed check-in notifications, and caregiver alerts will appear here in Phase 4.
-          </p>
+        <div className="space-y-3">
+          {(!alerts || alerts.length === 0) ? (
+            <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
+              <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+              <h3 className="text-sm font-bold text-slate-800">
+                No Active Alerts for this Patient
+              </h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                Patient responses have not triggered any critical or urgent red flags.
+              </p>
+            </div>
+          ) : (
+            alerts.map((alert: any) => (
+              <div
+                key={alert.id}
+                className={`p-4 rounded-xl border ${
+                  alert.severity === "critical"
+                    ? "bg-rose-50 border-rose-200"
+                    : alert.severity === "urgent"
+                    ? "bg-amber-50 border-amber-200"
+                    : "bg-white border-slate-200"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                        alert.severity === "critical"
+                          ? "bg-rose-600 text-white"
+                          : alert.severity === "urgent"
+                          ? "bg-amber-600 text-white"
+                          : "bg-sky-600 text-white"
+                      }`}
+                    >
+                      {alert.severity}
+                    </span>
+                    <span className="text-xs font-bold text-slate-900">
+                      Alert ({alert.source})
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500">
+                    {new Date(alert.created_at).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="mt-2 space-y-1">
+                  {alert.reasons?.map((reason: string, idx: number) => (
+                    <p key={idx} className="text-xs font-semibold text-rose-900">
+                      • {reason}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>

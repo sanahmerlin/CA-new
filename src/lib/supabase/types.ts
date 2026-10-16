@@ -109,6 +109,10 @@ export interface Database {
           discharge_date: string;
           raw_history_text: string | null;
           status: string;
+          access_code: string | null;
+          plan_tier: string;
+          consent_given: boolean;
+          monitoring_tier: string;
           created_at: string;
         };
         Insert: {
@@ -125,6 +129,10 @@ export interface Database {
           discharge_date?: string;
           raw_history_text?: string | null;
           status?: string;
+          access_code?: string | null;
+          plan_tier?: string;
+          consent_given?: boolean;
+          monitoring_tier?: string;
           created_at?: string;
         };
         Update: {
@@ -141,6 +149,10 @@ export interface Database {
           discharge_date?: string;
           raw_history_text?: string | null;
           status?: string;
+          access_code?: string | null;
+          plan_tier?: string;
+          consent_given?: boolean;
+          monitoring_tier?: string;
           created_at?: string;
         };
         Relationships: [
@@ -215,6 +227,259 @@ export interface Database {
             foreignKeyName: "patient_records_hospital_id_fkey";
             columns: ["hospital_id"];
             isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      monitoring_plans: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hospital_id: string;
+          risk_tier: string;
+          window_days: number;
+          schedule: Json;
+          focus_areas: Json;
+          red_flag_symptoms: Json;
+          model_name: string | null;
+          prompt_version: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          hospital_id: string;
+          risk_tier: string;
+          window_days?: number;
+          schedule: Json;
+          focus_areas: Json;
+          red_flag_symptoms: Json;
+          model_name?: string | null;
+          prompt_version?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          patient_id?: string;
+          hospital_id?: string;
+          risk_tier?: string;
+          window_days?: number;
+          schedule?: Json;
+          focus_areas?: Json;
+          red_flag_symptoms?: Json;
+          model_name?: string | null;
+          prompt_version?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "monitoring_plans_patient_id_fkey";
+            columns: ["patient_id"];
+            isOneToOne: false;
+            referencedRelation: "patients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "monitoring_plans_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      checkins: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hospital_id: string;
+          scheduled_day: number;
+          scheduled_for: string;
+          status: string;
+          questions: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          hospital_id: string;
+          scheduled_day?: number;
+          scheduled_for: string;
+          status?: string;
+          questions: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          patient_id?: string;
+          hospital_id?: string;
+          scheduled_day?: number;
+          scheduled_for?: string;
+          status?: string;
+          questions?: Json;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "checkins_patient_id_fkey";
+            columns: ["patient_id"];
+            isOneToOne: false;
+            referencedRelation: "patients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "checkins_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      responses: {
+        Row: {
+          id: string;
+          checkin_id: string;
+          patient_id: string;
+          hospital_id: string;
+          answers: Json;
+          severity: string;
+          clinical_summary: string | null;
+          red_flags_detected: Json | null;
+          answered_at: string;
+        };
+        Insert: {
+          id?: string;
+          checkin_id: string;
+          patient_id: string;
+          hospital_id: string;
+          answers: Json;
+          severity: string;
+          clinical_summary?: string | null;
+          red_flags_detected?: Json | null;
+          answered_at?: string;
+        };
+        Update: {
+          id?: string;
+          checkin_id?: string;
+          patient_id?: string;
+          hospital_id?: string;
+          answers?: Json;
+          severity?: string;
+          clinical_summary?: string | null;
+          red_flags_detected?: Json | null;
+          answered_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "responses_checkin_id_fkey";
+            columns: ["checkin_id"];
+            isOneToOne: false;
+            referencedRelation: "checkins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "responses_patient_id_fkey";
+            columns: ["patient_id"];
+            isOneToOne: false;
+            referencedRelation: "patients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "responses_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      alerts: {
+        Row: {
+          id: string;
+          patient_id: string;
+          hospital_id: string;
+          checkin_id: string | null;
+          severity: string;
+          reasons: Json;
+          source: string;
+          status: string;
+          resolved_note: string | null;
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          patient_id: string;
+          hospital_id: string;
+          checkin_id?: string | null;
+          severity: string;
+          reasons: Json;
+          source: string;
+          status?: string;
+          resolved_note?: string | null;
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          patient_id?: string;
+          hospital_id?: string;
+          checkin_id?: string | null;
+          severity?: string;
+          reasons?: Json;
+          source?: string;
+          status?: string;
+          resolved_note?: string | null;
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "alerts_patient_id_fkey";
+            columns: ["patient_id"];
+            isOneToOne: false;
+            referencedRelation: "patients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "alerts_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: false;
+            referencedRelation: "hospitals";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "alerts_checkin_id_fkey";
+            columns: ["checkin_id"];
+            isOneToOne: false;
+            referencedRelation: "checkins";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      app_settings: {
+        Row: {
+          hospital_id: string;
+          simulated_time_offset_minutes: number;
+          updated_at: string;
+        };
+        Insert: {
+          hospital_id: string;
+          simulated_time_offset_minutes?: number;
+          updated_at?: string;
+        };
+        Update: {
+          hospital_id?: string;
+          simulated_time_offset_minutes?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "app_settings_hospital_id_fkey";
+            columns: ["hospital_id"];
+            isOneToOne: true;
             referencedRelation: "hospitals";
             referencedColumns: ["id"];
           }
