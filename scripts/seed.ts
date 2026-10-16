@@ -36,7 +36,7 @@ const SUNRISE_DEPARTMENTS = ["Cardiology", "Orthopaedics", "General Surgery", "P
 // 10 realistic seeded patients for Sunrise Heart & General Hospital
 const PATIENT_DATA = [
   {
-    id: "p1000000-0000-0000-0000-000000000001",
+    id: "c1000000-0000-0000-0000-000000000001",
     department: "Cardiology",
     full_name: "Rajesh Sharma",
     age: 62,
@@ -60,7 +60,7 @@ const PATIENT_DATA = [
     raw_history_text: "62yo diabetic male post-CABG x3. Discharged hemodynamically stable. Sternal precautions advised.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000002",
+    id: "c1000000-0000-0000-0000-000000000002",
     department: "Cardiology",
     full_name: "Mary Varghese",
     age: 71,
@@ -84,7 +84,7 @@ const PATIENT_DATA = [
     raw_history_text: "71yo female admitted with acute orthopnea and bilateral pedal edema. Responded well to IV diuretics.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000003",
+    id: "c1000000-0000-0000-0000-000000000003",
     department: "Cardiology",
     full_name: "Vikram Malhotra",
     age: 55,
@@ -108,7 +108,7 @@ const PATIENT_DATA = [
     raw_history_text: "55M presented with acute retrosternal chest pain. Urgent angiography revealed 95% LAD thrombotic occlusion.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000004",
+    id: "c1000000-0000-0000-0000-000000000004",
     department: "Orthopaedics",
     full_name: "Sundararajan K",
     age: 58,
@@ -132,7 +132,7 @@ const PATIENT_DATA = [
     raw_history_text: "58yo male underwent elective right uncemented THR. Tolerated procedure well. Mobilizing with walker.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000005",
+    id: "c1000000-0000-0000-0000-000000000005",
     department: "Orthopaedics",
     full_name: "Meenakshi Sundaram",
     age: 68,
@@ -155,7 +155,7 @@ const PATIENT_DATA = [
     raw_history_text: "68F with debilitating left knee pain underwent successful left TKR. Knee flexion reached 90 degrees at discharge.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000006",
+    id: "c1000000-0000-0000-0000-000000000006",
     department: "Orthopaedics",
     full_name: "Amit Patel",
     age: 42,
@@ -178,7 +178,7 @@ const PATIENT_DATA = [
     raw_history_text: "42M presenting with severe left leg sciatica resistant to conservative therapy. Underwent uneventful microdiscectomy.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000007",
+    id: "c1000000-0000-0000-0000-000000000007",
     department: "General Surgery",
     full_name: "Fatima Begum",
     age: 49,
@@ -201,7 +201,7 @@ const PATIENT_DATA = [
     raw_history_text: "49F admitted with recurrent right upper quadrant pain and gallstones. Laparoscopic cholecystectomy completed without complications.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000008",
+    id: "c1000000-0000-0000-0000-000000000008",
     department: "General Surgery",
     full_name: "Sunil Deshmukh",
     age: 54,
@@ -224,7 +224,7 @@ const PATIENT_DATA = [
     raw_history_text: "54yo male with reducible right groin swelling. Open mesh hernioplasty performed under spinal anesthesia.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000009",
+    id: "c1000000-0000-0000-0000-000000000009",
     department: "Pulmonology",
     full_name: "Joseph George",
     age: 66,
@@ -248,7 +248,7 @@ const PATIENT_DATA = [
     raw_history_text: "66M heavy ex-smoker admitted with increased dyspnea, wheezing, and purulent sputum. Stabilized on nebulization and systemic steroids.",
   },
   {
-    id: "p1000000-0000-0000-0000-000000000010",
+    id: "c1000000-0000-0000-0000-000000000010",
     department: "Pulmonology",
     full_name: "Anita Roy",
     age: 60,
