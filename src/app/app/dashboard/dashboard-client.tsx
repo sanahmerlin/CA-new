@@ -451,7 +451,7 @@ export function DashboardClient({
                           Clinical AI Assessment Paragraph
                         </span>
                         <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
-                          Gemini 3.5 Flash Safety Analysis
+                          Clinical Safety Analysis
                         </span>
                       </div>
 

@@ -257,7 +257,7 @@ export function PatientAnalysisClient({ patientId, initialResponses }: Props) {
                   </span>
                 </div>
 
-                {/* Gemini Overall Analysis Paragraph */}
+                {/* Clinical Overall Analysis Paragraph */}
                 <div className="space-y-1">
                   <p className="text-xs sm:text-sm text-slate-900 leading-relaxed font-medium">
                     {item.clinical_summary || "Patient completed check-in. Stable recovery noted."}

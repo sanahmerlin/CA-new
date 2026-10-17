@@ -189,7 +189,7 @@ export default async function PatientDetailPage({
                   <div className="mt-3 p-3 rounded-xl bg-white/90 border border-rose-200/80 text-xs text-slate-800 shadow-2xs">
                     <div className="flex items-center gap-1.5 font-bold text-rose-800 mb-1">
                       <Sparkles className="h-3.5 w-3.5 text-rose-600" />
-                      <span>Gemini Triage Analysis for Doctors:</span>
+                      <span>Clinical Triage Analysis for Doctors:</span>
                     </div>
                     <p className="leading-relaxed">{latestResponse.clinical_summary}</p>
                   </div>

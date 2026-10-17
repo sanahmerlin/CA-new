@@ -185,7 +185,7 @@ export function BulkEnrolClient({ departments }: { departments: Department[] }) 
     }
 
     setIsExtracting(true);
-    setExtractionProgress(`Analyzing ${totalCount} records concurrently with Gemini AI...`);
+    setExtractionProgress(`Analyzing ${totalCount} records concurrently...`);
     setExtractionError(null);
 
     try {
@@ -351,7 +351,7 @@ export function BulkEnrolClient({ departments }: { departments: Department[] }) 
             </h2>
             <p className="text-xs text-slate-600 mt-1 leading-relaxed">
               Upload multiple patient discharge summaries or clinical sheets (PDF, TXT, images) at once.
-              Gemini AI extracts demographics, diagnoses, and medication regimens in parallel, letting clinical
+              Demographics, diagnoses, and medication regimens are extracted in parallel, letting clinical
               staff review and confirm all patients in a single unified view.
             </p>
           </div>

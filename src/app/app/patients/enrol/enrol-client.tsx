@@ -644,7 +644,7 @@ export function EnrolClient({
           <div className="border-b border-slate-100 pb-4">
             <h2 className="text-base font-bold text-slate-900">Clinical History & Discharge Record</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Paste unstructured medical notes, discharge summary text, or upload a scanned PDF/image. Gemini will automatically extract medications, risks, and follow-up plans.
+              Paste unstructured medical notes, discharge summary text, or upload a scanned PDF/image to automatically extract medications, risks, and follow-up plans.
             </p>
           </div>
 
@@ -743,7 +743,7 @@ export function EnrolClient({
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
             >
               <Sparkles className="h-4 w-4" />
-              <span>{isExtracting ? "Extracting with Gemini..." : "Extract with Gemini AI"}</span>
+              <span>{isExtracting ? "Extracting..." : "Extract"}</span>
             </button>
           </div>
         </div>
