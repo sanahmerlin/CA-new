@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
@@ -82,15 +83,17 @@ export default async function PatientDetailPage({
     .eq("patient_id", id)
     .order("scheduled_day", { ascending: true });
 
+  const serviceClient = createServiceClient();
+
   // 5. Query alerts
-  const { data: alerts } = await supabase
+  const { data: alerts } = await serviceClient
     .from("alerts")
     .select("*")
     .eq("patient_id", id)
     .order("created_at", { ascending: false });
 
   // 6. Query patient responses & clinical triage analysis
-  const { data: responses } = await supabase
+  const { data: responses } = await serviceClient
     .from("responses")
     .select("*")
     .eq("patient_id", id)

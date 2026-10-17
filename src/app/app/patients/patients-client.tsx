@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, UserPlus, Users, Building2, ChevronRight, ShieldAlert, AlertTriangle, Layers } from "lucide-react";
 
@@ -41,9 +42,17 @@ export function PatientsClient({
   patients: PatientItem[];
   departments: Department[];
 }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [selectedDept, setSelectedDept] = useState<string>("all");
   const [alertFilter, setAlertFilter] = useState<"all" | "action_required" | "stable">("all");
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      router.refresh();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [router]);
 
   const actionRequiredCount = patients.filter(
     (p) => p.highestAlertSeverity === "critical" || p.highestAlertSeverity === "urgent"

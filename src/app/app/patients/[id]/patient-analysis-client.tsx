@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Sparkles, Clock, AlertTriangle, ShieldAlert, Radio } from "lucide-react";
+import { Sparkles, Clock, AlertTriangle, ShieldAlert, Radio, RefreshCw } from "lucide-react";
 
 export interface AnalysisResponseItem {
   id: string;
@@ -23,11 +23,77 @@ interface Props {
 export function PatientAnalysisClient({ patientId, initialResponses }: Props) {
   const router = useRouter();
   const [responses, setResponses] = useState<AnalysisResponseItem[]>(initialResponses);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const prevResponsesRef = useRef<AnalysisResponseItem[]>(initialResponses);
 
   useEffect(() => {
     setResponses(initialResponses);
+    prevResponsesRef.current = initialResponses;
   }, [initialResponses]);
 
+  // Fast direct polling function
+  const fetchAnalyses = useCallback(async (manual = false) => {
+    if (manual) setIsRefreshing(true);
+    try {
+      const res = await fetch(`/api/patient-analyses?patientId=${patientId}&t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.responses)) {
+          const freshResponses: AnalysisResponseItem[] = data.responses;
+          
+          // Check if there are any differences
+          const prev = prevResponsesRef.current;
+          const hasLengthDiff = freshResponses.length !== prev.length;
+          const hasIdDiff = freshResponses[0]?.id !== prev[0]?.id;
+          const hasSummaryDiff = freshResponses[0]?.clinical_summary !== prev[0]?.clinical_summary;
+          
+          if (hasLengthDiff || hasIdDiff || hasSummaryDiff) {
+            prevResponsesRef.current = freshResponses;
+            setResponses(freshResponses);
+            setLastUpdated(new Date());
+            router.refresh();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Analysis poll error:", err);
+    } finally {
+      if (manual) {
+        setTimeout(() => setIsRefreshing(false), 400);
+      }
+    }
+  }, [patientId, router]);
+
+  // 1. Polling interval: every 2.5 seconds
+  useEffect(() => {
+    // Initial fetch on mount
+    fetchAnalyses();
+
+    const interval = setInterval(() => {
+      fetchAnalyses();
+    }, 2500);
+
+    const onFocus = () => fetchAnalyses(true);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchAnalyses(true);
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [fetchAnalyses]);
+
+  // 2. Supabase Realtime channel (Fast-path if websocket is active)
   useEffect(() => {
     const supabase = createClient();
     const channelName = `realtime-analysis-${patientId}-${Date.now()}`;
@@ -48,14 +114,20 @@ export function PatientAnalysisClient({ patientId, initialResponses }: Props) {
             setResponses((prev) => {
               const exists = prev.some((r) => r.id === newRow.id);
               if (exists) return prev;
-              return [newRow, ...prev];
+              const next = [newRow, ...prev];
+              prevResponsesRef.current = next;
+              return next;
             });
+            setLastUpdated(new Date());
             router.refresh();
           } else if (payload.eventType === "UPDATE") {
             const updatedRow = payload.new as AnalysisResponseItem;
-            setResponses((prev) =>
-              prev.map((r) => (r.id === updatedRow.id ? updatedRow : r))
-            );
+            setResponses((prev) => {
+              const next = prev.map((r) => (r.id === updatedRow.id ? updatedRow : r));
+              prevResponsesRef.current = next;
+              return next;
+            });
+            setLastUpdated(new Date());
             router.refresh();
           }
         }
@@ -90,12 +162,21 @@ export function PatientAnalysisClient({ patientId, initialResponses }: Props) {
           </div>
         </div>
 
-        {/* Live Indicator */}
+        {/* Live Indicator & Controls */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             Live Realtime Updates
           </span>
+          <button
+            onClick={() => fetchAnalyses(true)}
+            title="Check for newest patient responses"
+            disabled={isRefreshing}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? "animate-spin text-teal-600" : ""}`} />
+            <span>{isRefreshing ? "Checking..." : "Refresh"}</span>
+          </button>
           <span className="text-xs font-bold text-slate-500">
             {sortedResponses.length} {sortedResponses.length === 1 ? "entry" : "entries"}
           </span>
@@ -120,11 +201,11 @@ export function PatientAnalysisClient({ patientId, initialResponses }: Props) {
             const isWatch = sev === "watch";
 
             const containerClass = isCritical
-              ? "bg-rose-50/50 border-rose-300"
+              ? "bg-rose-50/50 border-rose-300 ring-1 ring-rose-200"
               : isUrgent
-              ? "bg-amber-50/50 border-amber-300"
+              ? "bg-amber-50/50 border-amber-300 ring-1 ring-amber-200"
               : isWatch
-              ? "bg-sky-50/50 border-sky-300"
+              ? "bg-sky-50/50 border-sky-300 ring-1 ring-sky-200"
               : "bg-white border-slate-200";
 
             const chipClass = isCritical
