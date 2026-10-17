@@ -30,8 +30,7 @@ export function PatientLoginClient() {
         setError(res.error);
         setLoading(false);
       } else {
-        router.push("/patient");
-        router.refresh();
+        window.location.href = "/patient";
       }
     } catch {
       setError("Unable to connect to care portal. Please check your internet connection.");

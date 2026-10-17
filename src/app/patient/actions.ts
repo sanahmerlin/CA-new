@@ -36,15 +36,26 @@ export async function loginPatientAction(rawUsername: string, rawPassword: strin
 
     const supabase = getServiceClient();
 
-    // Query patients by username, ordering by created_at DESC (MOST RECENT FIRST)
-    // If the same username appears again, login opens the most recent patient with matching password.
-    const { data: candidates, error } = await supabase
+    // 1. Fast indexed exact match first (most recent patient first)
+    let { data: candidates } = await supabase
       .from("patients")
       .select("id, hospital_id, full_name, username, password_hash, status, created_at")
-      .or(`username.eq.${username},username.like.%_${username},username.like.${username}%`)
-      .order("created_at", { ascending: false });
+      .eq("username", username)
+      .order("created_at", { ascending: false })
+      .limit(3);
 
-    if (error || !candidates || candidates.length === 0) {
+    // 2. Fallback to prefix-handled matches if no exact username row exists
+    if (!candidates || candidates.length === 0) {
+      const fallbackRes = await supabase
+        .from("patients")
+        .select("id, hospital_id, full_name, username, password_hash, status, created_at")
+        .or(`username.like.%_${username},username.like.${username}%`)
+        .order("created_at", { ascending: false })
+        .limit(3);
+      candidates = fallbackRes.data;
+    }
+
+    if (!candidates || candidates.length === 0) {
       return { error: "Invalid username or password. Please verify the credentials on your discharge slip." };
     }
 
