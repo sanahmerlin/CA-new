@@ -17,6 +17,8 @@ export async function acknowledgeAlert(alertId: string) {
     if (error) return { error: error.message };
 
     revalidatePath("/app/dashboard");
+    revalidatePath("/app/patients");
+    revalidatePath("/app", "layout");
     return { success: true };
   } catch (err: any) {
     return { error: err.message };
@@ -41,6 +43,8 @@ export async function resolveAlert(alertId: string, note?: string) {
     if (error) return { error: error.message };
 
     revalidatePath("/app/dashboard");
+    revalidatePath("/app/patients");
+    revalidatePath("/app", "layout");
     return { success: true };
   } catch (err: any) {
     return { error: err.message };

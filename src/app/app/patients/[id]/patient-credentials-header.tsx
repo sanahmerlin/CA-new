@@ -51,9 +51,9 @@ export function PatientCredentialsHeader({ patientId, username, fullName, age }:
     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
       {/* Credentials Badge */}
       {username && (
-        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs shadow-2xs">
+          <span className="font-semibold text-slate-600">Patient login:</span>
           <div className="flex items-center gap-1 text-slate-600">
-            <User className="w-3.5 h-3.5 text-slate-400" />
             <span className="font-mono font-bold text-slate-800">{username}</span>
             <button
               type="button"
@@ -62,17 +62,16 @@ export function PatientCredentialsHeader({ patientId, username, fullName, age }:
                 setCopiedUser(true);
                 setTimeout(() => setCopiedUser(false), 2000);
               }}
-              className="p-1 hover:text-teal-600 rounded"
+              className="p-1 hover:text-teal-600 text-slate-400 rounded transition"
               title="Copy username"
             >
               {copiedUser ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
 
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-400 font-bold">/</span>
 
           <div className="flex items-center gap-1 text-slate-600">
-            <Key className="w-3.5 h-3.5 text-slate-400" />
             <span className="font-mono font-bold text-slate-800">{plainPassword}</span>
             <button
               type="button"
@@ -81,7 +80,7 @@ export function PatientCredentialsHeader({ patientId, username, fullName, age }:
                 setCopiedPass(true);
                 setTimeout(() => setCopiedPass(false), 2000);
               }}
-              className="p-1 hover:text-teal-600 rounded"
+              className="p-1 hover:text-teal-600 text-slate-400 rounded transition"
               title="Copy password"
             >
               {copiedPass ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -93,7 +92,7 @@ export function PatientCredentialsHeader({ patientId, username, fullName, age }:
             target="_blank"
             rel="noreferrer"
             title="Open patient login portal in new tab"
-            className="p-1 text-teal-600 hover:text-teal-800 ml-1"
+            className="p-1 text-teal-600 hover:text-teal-800 ml-0.5"
           >
             <ExternalLink className="w-3.5 h-3.5" />
           </a>

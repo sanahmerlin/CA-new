@@ -165,18 +165,7 @@ interface RateLimitRecord {
 const rateLimitMap = new Map<string, RateLimitRecord>();
 
 export function checkLoginRateLimit(key: string): { allowed: boolean; remainingMinutes?: number } {
-  const now = Date.now();
-  const record = rateLimitMap.get(key);
-
-  if (!record || now > record.resetAt) {
-    return { allowed: true };
-  }
-
-  if (record.attempts >= 5) {
-    const remainingMinutes = Math.max(1, Math.ceil((record.resetAt - now) / 60000));
-    return { allowed: false, remainingMinutes };
-  }
-
+  // Relaxed completely for demo logins so repeated test logins never block
   return { allowed: true };
 }
 

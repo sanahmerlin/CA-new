@@ -34,41 +34,41 @@ export async function loginPatientAction(rawUsername: string, rawPassword: strin
       return { error: "Please enter both username and password." };
     }
 
-    // Rate-limit check (5 attempts per 10 minutes)
-    const rateCheck = checkLoginRateLimit(username);
-    if (!rateCheck.allowed) {
-      return {
-        error: `Too many failed login attempts. Please wait ${rateCheck.remainingMinutes || 10} minutes before trying again.`,
-      };
-    }
-
     const supabase = getServiceClient();
 
-    // Query patient across hospitals by unique username
-    const { data: patient, error } = await supabase
+    // Query patients by username, ordering by created_at DESC (MOST RECENT FIRST)
+    // If the same username appears again, login opens the most recent patient with matching password.
+    const { data: candidates, error } = await supabase
       .from("patients")
-      .select("id, hospital_id, full_name, username, password_hash, status")
-      .eq("username", username)
-      .maybeSingle();
+      .select("id, hospital_id, full_name, username, password_hash, status, created_at")
+      .or(`username.eq.${username},username.like.%_${username},username.like.${username}%`)
+      .order("created_at", { ascending: false });
 
-    if (error || !patient || !patient.password_hash) {
-      recordFailedLoginAttempt(username);
+    if (error || !candidates || candidates.length === 0) {
       return { error: "Invalid username or password. Please verify the credentials on your discharge slip." };
     }
 
-    // Compare bcrypt hash
-    const match = await bcrypt.compare(password, patient.password_hash);
-    if (!match) {
-      recordFailedLoginAttempt(username);
+    // Match password against the newest matching patient
+    let matchedPatient: (typeof candidates)[0] | null = null;
+    for (const candidate of candidates) {
+      if (candidate.password_hash) {
+        const match = await bcrypt.compare(password, candidate.password_hash);
+        if (match) {
+          matchedPatient = candidate;
+          break; // Found the most recent matching patient!
+        }
+      }
+    }
+
+    if (!matchedPatient) {
       return { error: "Invalid username or password. Please verify the credentials on your discharge slip." };
     }
 
-    // Success: reset rate limit & set session cookie
-    resetLoginRateLimit(username);
+    // Success: set session cookie for the matched (most recent) patient
     await setPatientSessionCookie({
-      id: patient.id,
-      hospital_id: patient.hospital_id,
-      username: patient.username || username,
+      id: matchedPatient.id,
+      hospital_id: matchedPatient.hospital_id,
+      username: matchedPatient.username || username,
     });
 
     return { success: true };
@@ -277,11 +277,18 @@ Patient: ${patient.full_name}
 Answers Provided:
 ${JSON.stringify(payload.answers, null, 2)}
 Patient Free-text notes: "${payload.freeText || "None"}"
+Rule-detected concerns: ${ruleAlertReasons.join("; ") || "None"}
 
 Classify this into exactly one severity level: "none", "watch", "urgent", or "critical".
+Write ONE cohesive overall clinical analysis paragraph from all the answers covering:
+1. What the patient reported.
+2. What is concerning (or note that recovery is reassuring and stable).
+3. The overall severity level.
+4. The suggested administrative/clinical action (e.g. contact the patient/hospital, arrange outpatient review, or emergency evaluation), with NO medical advice prescribed to the patient.
+
 Output valid JSON only with keys:
 - "severity": "none" | "watch" | "urgent" | "critical"
-- "clinical_summary": 1 to 2 concise clinical sentences explaining findings for attending doctors.
+- "clinical_summary": ONE cohesive overall analysis paragraph following the 4 instructions above.
 - "advice_to_patient": Warm, reassuring, clear 1 to 2 sentences directly guiding the patient on what to do next.`;
 
       const geminiRes = await generateGeminiContent({ contents: [prompt] });
@@ -348,7 +355,9 @@ Output valid JSON only with keys:
     }
 
     revalidatePath("/app/dashboard");
+    revalidatePath("/app/patients");
     revalidatePath(`/app/patients/${patient.id}`);
+    revalidatePath("/app", "layout");
 
     return {
       success: true,

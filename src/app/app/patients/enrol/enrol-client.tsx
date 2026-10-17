@@ -26,6 +26,7 @@ import {
   ExternalLink,
   ShieldCheck,
   Check,
+  Key,
 } from "lucide-react";
 import { enrolPatient, createPendingPatientStep1 } from "../actions";
 import type { ExtractedHistory, Medication } from "@/lib/ai/extractHistory";
@@ -199,6 +200,12 @@ export function EnrolClient({
       const formData = new FormData();
       if (rawText.trim()) formData.append("rawText", rawText);
       if (file) formData.append("file", file);
+      if (fullName.trim()) formData.append("fallbackName", fullName.trim());
+      if (age) formData.append("fallbackAge", String(age));
+      if (departmentId) formData.append("departmentId", departmentId);
+      if (dischargeDate) formData.append("dischargeDate", dischargeDate);
+      if (patientPhone) formData.append("patientPhone", patientPhone);
+      if (createdPatientId) formData.append("patientId", createdPatientId);
 
       const res = await fetch("/api/extract", {
         method: "POST",
@@ -211,7 +218,20 @@ export function EnrolClient({
         setExtractionError(result.error || "Extraction failed. Continuing with manual entry.");
       }
 
-      const extracted: ExtractedHistory = result.data;
+      if (result.credentials) {
+        setCredentials(result.credentials);
+      }
+      if (result.patientId) {
+        setCreatedPatientId(result.patientId);
+      }
+      if (result.patientName) {
+        setFullName(result.patientName);
+      }
+      if (result.patientAge) {
+        setAge(result.patientAge);
+      }
+
+      const extracted: ExtractedHistory = result.data || {};
       setDiagnosis(extracted.diagnosis || "");
       setMedications(extracted.medications || []);
       setMedicalHistory(extracted.medical_history || []);
@@ -787,6 +807,56 @@ export function EnrolClient({
             </div>
           )}
 
+          {/* Patient Credentials Card (Generated from History) */}
+          {credentials && (
+            <div className="bg-teal-50/70 border border-teal-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Key className="w-4 h-4 text-teal-700" />
+                  <span className="text-xs font-bold text-teal-950 uppercase tracking-wider">
+                    Patient Credentials (Generated from Medical History)
+                  </span>
+                </div>
+                <p className="text-xs text-teal-800 mt-0.5">
+                  The patient can already sign in at <strong className="text-teal-900">/patient/login</strong> on their phone.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-lg border border-teal-200 shadow-2xs">
+                <span className="text-xs font-semibold text-slate-700">Patient login:</span>
+                <span className="font-mono font-bold text-xs text-slate-900">{credentials.username}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(credentials.username);
+                    setCopiedUser(true);
+                    setTimeout(() => setCopiedUser(false), 2000);
+                  }}
+                  className="p-1 text-slate-500 hover:text-teal-600 rounded transition"
+                  title="Copy username"
+                >
+                  {copiedUser ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+
+                <span className="text-slate-400 font-bold">/</span>
+
+                <span className="font-mono font-bold text-xs text-slate-900">{credentials.plainPassword}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(credentials.plainPassword);
+                    setCopiedPass(true);
+                    setTimeout(() => setCopiedPass(false), 2000);
+                  }}
+                  className="p-1 text-slate-500 hover:text-teal-600 rounded transition"
+                  title="Copy password"
+                >
+                  {copiedPass ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Section 1: Diagnosis */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
@@ -1069,52 +1139,43 @@ export function EnrolClient({
                 Patient Portal Credentials
               </span>
 
-              {/* Username row */}
-              <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-medium">Username</span>
-                  <span className="text-xs font-mono font-bold text-slate-900">
-                    {enrolledModal.username}
-                  </span>
+              <div className="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-600">Patient login:</span>
+                  <div className="flex items-center gap-1 font-mono font-bold text-slate-900">
+                    <span>{enrolledModal.username}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(enrolledModal.username);
+                        setCopiedUser(true);
+                        setTimeout(() => setCopiedUser(false), 2000);
+                      }}
+                      className="p-1 text-slate-400 hover:text-teal-600 rounded transition"
+                      title="Copy username"
+                    >
+                      {copiedUser ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                    <span className="text-slate-400">/</span>
+                    <span>{enrolledModal.plainPassword}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(enrolledModal.plainPassword);
+                        setCopiedPass(true);
+                        setTimeout(() => setCopiedPass(false), 2000);
+                      }}
+                      className="p-1 text-slate-400 hover:text-teal-600 rounded transition"
+                      title="Copy password"
+                    >
+                      {copiedPass ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(enrolledModal.username);
-                    setCopiedUser(true);
-                    setTimeout(() => setCopiedUser(false), 2000);
-                  }}
-                  className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-slate-50 rounded-md transition"
-                  title="Copy username"
-                >
-                  {copiedUser ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
               </div>
 
-              {/* Password row */}
-              <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-medium">Password</span>
-                  <span className="text-xs font-mono font-bold text-slate-900">
-                    {enrolledModal.plainPassword}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(enrolledModal.plainPassword);
-                    setCopiedPass(true);
-                    setTimeout(() => setCopiedPass(false), 2000);
-                  }}
-                  className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-slate-50 rounded-md transition"
-                  title="Copy password"
-                >
-                  {copiedPass ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <p className="text-[11px] text-slate-500 leading-normal pt-1">
-                Provide these credentials to the patient to sign in at <strong className="text-teal-700">/patient/login</strong>.
+              <p className="text-[11px] text-slate-500 leading-normal pt-0.5">
+                Provide these credentials to the patient to sign in at <strong className="text-teal-700">/patient/login</strong> on their phone.
               </p>
             </div>
 

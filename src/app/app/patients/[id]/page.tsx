@@ -16,10 +16,14 @@ import {
   Bell,
   Activity,
   Sparkles,
-  QrCode,
+  HelpCircle,
+  AlertCircle,
+  FileText,
 } from "lucide-react";
 import type { Medication } from "@/lib/ai/extractHistory";
 import { PatientCredentialsHeader } from "./patient-credentials-header";
+import { PatientAlertActions } from "./patient-alert-actions";
+import { PatientAnalysisClient } from "./patient-analysis-client";
 
 export default async function PatientDetailPage({
   params,
@@ -33,7 +37,7 @@ export default async function PatientDetailPage({
 
   const supabase = await createClient();
 
-  // Query patient and department
+  // 1. Query patient and department
   const { data: patient } = await supabase
     .from("patients")
     .select(`
@@ -50,21 +54,21 @@ export default async function PatientDetailPage({
     notFound();
   }
 
-  // Query confirmed clinical record
+  // 2. Query confirmed clinical record
   const { data: record } = await supabase
     .from("patient_records")
     .select("*")
     .eq("patient_id", id)
     .maybeSingle();
 
-  // Query monitoring plan
+  // 3. Query monitoring plan
   const { data: monitoringPlan } = await supabase
     .from("monitoring_plans")
     .select("*")
     .eq("patient_id", id)
     .maybeSingle();
 
-  // Query checkins and responses
+  // 4. Query checkins
   const { data: checkins } = await supabase
     .from("checkins")
     .select(`
@@ -78,12 +82,19 @@ export default async function PatientDetailPage({
     .eq("patient_id", id)
     .order("scheduled_day", { ascending: true });
 
-  // Query alerts
+  // 5. Query alerts
   const { data: alerts } = await supabase
     .from("alerts")
     .select("*")
     .eq("patient_id", id)
     .order("created_at", { ascending: false });
+
+  // 6. Query patient responses & clinical triage analysis
+  const { data: responses } = await supabase
+    .from("responses")
+    .select("*")
+    .eq("patient_id", id)
+    .order("answered_at", { ascending: false });
 
   const medications: Medication[] = Array.isArray(record?.medications)
     ? (record.medications as any)
@@ -94,9 +105,15 @@ export default async function PatientDetailPage({
   const riskFactors: string[] = Array.isArray(record?.risk_factors)
     ? (record.risk_factors as any)
     : [];
-  const allergies: string[] = Array.isArray(record?.allergies)
-    ? (record.allergies as any)
-    : [];
+
+  const openAlerts = (alerts || []).filter(
+    (a: any) => a.status === "open" || a.status === "acknowledged"
+  );
+  const criticalAlert = openAlerts.find((a: any) => a.severity === "critical");
+  const urgentAlert = openAlerts.find((a: any) => a.severity === "urgent");
+  const highestActiveAlert = criticalAlert || urgentAlert || openAlerts[0] || null;
+
+  const latestResponse = responses && responses.length > 0 ? responses[0] : null;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -111,6 +128,91 @@ export default async function PatientDetailPage({
         </Link>
       </div>
 
+      {/* EMERGENCY ALERT BANNER (Shows when patient has an active open alert) */}
+      {highestActiveAlert && (
+        <div
+          className={`rounded-2xl border p-5 shadow-sm transition-all ${
+            highestActiveAlert.severity === "critical"
+              ? "bg-rose-50 border-rose-300 text-rose-950"
+              : highestActiveAlert.severity === "urgent"
+              ? "bg-amber-50 border-amber-300 text-amber-950"
+              : "bg-sky-50 border-sky-300 text-sky-950"
+          }`}
+        >
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5 flex-1 min-w-0">
+              <div
+                className={`p-3 rounded-xl text-white shrink-0 mt-0.5 ${
+                  highestActiveAlert.severity === "critical"
+                    ? "bg-rose-600 animate-pulse shadow-xs"
+                    : "bg-amber-600 shadow-xs"
+                }`}
+              >
+                <ShieldAlert className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                      highestActiveAlert.severity === "critical"
+                        ? "bg-rose-600 text-white"
+                        : "bg-amber-600 text-white"
+                    }`}
+                  >
+                    {highestActiveAlert.severity} safety alert active
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Reported {new Date(highestActiveAlert.created_at).toLocaleString()}
+                  </span>
+                  <span className="text-xs font-medium text-slate-500">
+                    • Status: <strong className="capitalize text-slate-800">{highestActiveAlert.status}</strong>
+                  </span>
+                </div>
+
+                <h2 className="text-base font-bold text-slate-900 mt-1">
+                  Immediate Clinical Action Required
+                </h2>
+
+                <div className="mt-2 space-y-1">
+                  {(Array.isArray(highestActiveAlert.reasons) ? (highestActiveAlert.reasons as string[]) : []).map((reason: string, idx: number) => (
+                    <div key={idx} className="flex items-start gap-1.5 text-xs font-bold text-rose-900">
+                      <span className="text-rose-500">•</span>
+                      <span>{reason}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {latestResponse?.clinical_summary && (
+                  <div className="mt-3 p-3 rounded-xl bg-white/90 border border-rose-200/80 text-xs text-slate-800 shadow-2xs">
+                    <div className="flex items-center gap-1.5 font-bold text-rose-800 mb-1">
+                      <Sparkles className="h-3.5 w-3.5 text-rose-600" />
+                      <span>Gemini Triage Analysis for Doctors:</span>
+                    </div>
+                    <p className="leading-relaxed">{latestResponse.clinical_summary}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="flex flex-col sm:items-end gap-2.5 shrink-0">
+              <a
+                href={`tel:${patient.patient_phone}`}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+              >
+                <Phone className="h-3.5 w-3.5" />
+                <span>Call Patient ({patient.patient_phone})</span>
+              </a>
+
+              <PatientAlertActions
+                alertId={highestActiveAlert.id}
+                currentStatus={highestActiveAlert.status}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Patient Header Card */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -123,10 +225,26 @@ export default async function PatientDetailPage({
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                   {patient.full_name}
                 </h1>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                  Active Monitoring
-                </span>
+
+                {/* Dynamic Status Badge */}
+                {highestActiveAlert ? (
+                  highestActiveAlert.severity === "critical" ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                      <span className="h-2 w-2 rounded-full bg-rose-600"></span>
+                      Critical Alert Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      <span className="h-2 w-2 rounded-full bg-amber-600"></span>
+                      Urgent Alert Active
+                    </span>
+                  )
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                    Active Monitoring
+                  </span>
+                )}
 
                 {patient.plan_tier === "pro" && (
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200 px-2.5 py-0.5 rounded-full">
@@ -190,6 +308,11 @@ export default async function PatientDetailPage({
         >
           <Clock className="h-4 w-4" />
           <span>Monitoring Timeline ({checkins?.length || 0})</span>
+          {responses && responses.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+              {responses.length} answered
+            </span>
+          )}
         </Link>
         <Link
           href={`/app/patients/${id}?tab=alerts`}
@@ -200,13 +323,27 @@ export default async function PatientDetailPage({
           }`}
         >
           <Bell className="h-4 w-4" />
-          <span>Priority Alerts ({alerts?.length || 0})</span>
+          <span>Priority Alerts</span>
+          {alerts && alerts.length > 0 && (
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                openAlerts.length > 0
+                  ? "bg-rose-600 text-white animate-pulse"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {alerts.length}
+            </span>
+          )}
         </Link>
       </div>
 
       {/* TAB 1: OVERVIEW */}
       {tab === "overview" && (
         <div className="space-y-6">
+          {/* ANALYSIS ONLY STREAM (NEWEST FIRST WITH STATUS CHIP & TIMESTAMPS) */}
+          <PatientAnalysisClient patientId={id} initialResponses={(responses || []) as any} />
+
           {/* Confirmed Record Banner */}
           {record && (
             <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-emerald-800">
@@ -350,16 +487,16 @@ export default async function PatientDetailPage({
         </div>
       )}
 
-      {/* TAB 2: TIMELINE (PHASE 3 ACTIVE ENGINE) */}
+      {/* TAB 2: TIMELINE (CHECKINS & RESPONSES) */}
       {tab === "timeline" && (
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                Recovery Check-in Schedule
+                Recovery Check-in Schedule & Patient Responses
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Pre-generated daily check-in cycles (English, Malayalam, Hindi)
+                Multilingual questionnaires with verified patient submissions and AI triage summaries
               </p>
             </div>
             <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
@@ -367,58 +504,127 @@ export default async function PatientDetailPage({
             </span>
           </div>
 
-          <div className="space-y-3">
-            {checkins?.map((cycle: any) => (
-              <div
-                key={cycle.id}
-                className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-teal-600 text-white text-xs font-bold">
-                      {cycle.scheduled_day}
-                    </span>
-                    <span className="text-xs font-bold text-slate-900">
-                      Day {cycle.scheduled_day} Check-in
-                    </span>
-                  </div>
+          <div className="space-y-4">
+            {checkins?.map((cycle: any) => {
+              // Find matching response for this cycle
+              const cycleResponse = (responses || []).find((r: any) => r.checkin_id === cycle.id);
+              const isAnswered = cycle.status === "answered" || Boolean(cycleResponse);
+              const answersMap = (cycleResponse?.answers as Record<string, string>) || {};
 
-                  <span
-                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                      cycle.status === "answered"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : cycle.status === "active"
-                        ? "bg-blue-100 text-blue-800"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {cycle.status}
-                  </span>
-                </div>
-
-                {/* Questions Preview */}
-                <div className="bg-slate-50 rounded-lg p-3 space-y-1.5 border border-slate-100 text-xs">
-                  {cycle.questions?.map((q: any, qIdx: number) => (
-                    <div key={q.id || qIdx} className="flex items-start gap-1.5 text-slate-700">
-                      <span className="text-slate-400 font-medium">{qIdx + 1}.</span>
+              return (
+                <div
+                  key={cycle.id}
+                  className={`bg-white rounded-2xl border p-5 shadow-xs space-y-4 ${
+                    cycleResponse?.severity === "critical"
+                      ? "border-rose-300"
+                      : cycleResponse?.severity === "urgent"
+                      ? "border-amber-300"
+                      : "border-slate-200"
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex items-center justify-center w-7 h-7 rounded-full bg-teal-600 text-white text-xs font-bold shadow-2xs">
+                        {cycle.scheduled_day}
+                      </span>
                       <div>
-                        <p className="font-medium text-slate-900">{q.text?.en || q.text}</p>
-                        {q.text?.ml && (
-                          <p className="text-[11px] text-slate-500">{q.text.ml}</p>
+                        <span className="text-xs font-bold text-slate-900 block">
+                          Day {cycle.scheduled_day} Recovery Check-in
+                        </span>
+                        {cycleResponse?.answered_at && (
+                          <span className="text-[11px] text-slate-400">
+                            Answered on {new Date(cycleResponse.answered_at).toLocaleString()}
+                          </span>
                         )}
                       </div>
                     </div>
-                  ))}
+
+                    <div className="flex items-center gap-2">
+                      {cycleResponse?.severity && (
+                        <span
+                          className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                            cycleResponse.severity === "critical"
+                              ? "bg-rose-600 text-white animate-pulse"
+                              : cycleResponse.severity === "urgent"
+                              ? "bg-amber-600 text-white"
+                              : cycleResponse.severity === "watch"
+                              ? "bg-sky-600 text-white"
+                              : "bg-emerald-600 text-white"
+                          }`}
+                        >
+                          {cycleResponse.severity}
+                        </span>
+                      )}
+
+                      <span
+                        className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full ${
+                          isAnswered
+                            ? "bg-emerald-100 text-emerald-800"
+                            : cycle.status === "active"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {isAnswered ? "Answered" : cycle.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* If Answered: Show AI Clinical Summary */}
+                  {cycleResponse?.clinical_summary && (
+                    <div className="p-3.5 rounded-xl bg-teal-50/70 border border-teal-200/90 text-xs text-slate-800 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-teal-800">
+                        <Sparkles className="h-3.5 w-3.5 text-teal-600" />
+                        <span>AI Clinical Triage Assessment:</span>
+                      </div>
+                      <p className="leading-relaxed">{cycleResponse.clinical_summary}</p>
+                    </div>
+                  )}
+
+                  {/* Analysis-only display: No raw answers shown on admin side */}
+                  {isAnswered && Array.isArray(cycleResponse?.red_flags_detected) && cycleResponse.red_flags_detected.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Alerted symptoms:
+                      </span>
+                      {(cycleResponse.red_flags_detected as any[]).map((flag: any, idx: number) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[11px] font-semibold"
+                        >
+                          {String(flag)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {!isAnswered && (
+                    <p className="text-xs text-slate-400 italic">
+                      Scheduled recovery check-in for Day {cycle.scheduled_day}. Awaiting patient response.
+                    </p>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* TAB 3: ALERTS TAB */}
       {tab === "alerts" && (
-        <div className="space-y-3">
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Clinical Alerts Log</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Automated triage escalations triggered by patient symptoms and rule violations
+              </p>
+            </div>
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+              {alerts?.length || 0} Total Alerts
+            </span>
+          </div>
+
           {(!alerts || alerts.length === 0) ? (
             <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
               <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
@@ -430,48 +636,67 @@ export default async function PatientDetailPage({
               </p>
             </div>
           ) : (
-            alerts.map((alert: any) => (
-              <div
-                key={alert.id}
-                className={`p-4 rounded-xl border ${
-                  alert.severity === "critical"
-                    ? "bg-rose-50 border-rose-200"
-                    : alert.severity === "urgent"
-                    ? "bg-amber-50 border-amber-200"
-                    : "bg-white border-slate-200"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                        alert.severity === "critical"
-                          ? "bg-rose-600 text-white"
-                          : alert.severity === "urgent"
-                          ? "bg-amber-600 text-white"
-                          : "bg-sky-600 text-white"
-                      }`}
-                    >
-                      {alert.severity}
-                    </span>
-                    <span className="text-xs font-bold text-slate-900">
-                      Alert ({alert.source})
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    {new Date(alert.created_at).toLocaleString()}
-                  </span>
-                </div>
+            alerts.map((alert: any) => {
+              const isCrit = alert.severity === "critical";
+              const isUrg = alert.severity === "urgent";
 
-                <div className="mt-2 space-y-1">
-                  {alert.reasons?.map((reason: string, idx: number) => (
-                    <p key={idx} className="text-xs font-semibold text-rose-900">
-                      • {reason}
-                    </p>
-                  ))}
+              return (
+                <div
+                  key={alert.id}
+                  className={`p-5 rounded-2xl border shadow-xs space-y-3.5 transition-colors ${
+                    isCrit
+                      ? "bg-rose-50/50 border-rose-200"
+                      : isUrg
+                      ? "bg-amber-50/40 border-amber-200"
+                      : "bg-white border-slate-200"
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                          isCrit
+                            ? "bg-rose-600 text-white"
+                            : isUrg
+                            ? "bg-amber-600 text-white"
+                            : "bg-sky-600 text-white"
+                        }`}
+                      >
+                        {alert.severity}
+                      </span>
+                      <span className="text-xs font-bold text-slate-900">
+                        Triggered by {alert.source?.toUpperCase() || "RULE ENGINE"}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        • {new Date(alert.created_at).toLocaleString()}
+                      </span>
+                    </div>
+
+                    {/* Alert Action Buttons (Acknowledge / Resolve) */}
+                    <PatientAlertActions alertId={alert.id} currentStatus={alert.status} />
+                  </div>
+
+                  <div className="space-y-1.5 bg-white/80 p-3 rounded-xl border border-slate-200/80">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                      Reported Concerns:
+                    </span>
+                    {(Array.isArray(alert.reasons) ? (alert.reasons as string[]) : []).map((reason: string, idx: number) => (
+                      <p key={idx} className="text-xs font-semibold text-rose-900 flex items-start gap-1.5">
+                        <span className="text-rose-500">•</span>
+                        <span>{reason}</span>
+                      </p>
+                    ))}
+                  </div>
+
+                  {alert.resolved_at && (
+                    <div className="text-[11px] text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                      <strong>Resolved:</strong> {alert.resolved_note || "Resolved by clinical staff"} on{" "}
+                      {new Date(alert.resolved_at).toLocaleString()}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

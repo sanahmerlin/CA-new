@@ -5,7 +5,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { writeAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { generateMonitoringPlan } from "@/lib/ai/generatePlan";
-import { generatePatientCredentials } from "@/lib/auth/patient-session";
+import { generatePatientCredentialsFromHistory } from "@/lib/auth/patientCredentials";
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -83,40 +83,49 @@ export async function createPendingPatientStep1(payload: Step1PatientPayload) {
 
     const serviceClient = getServiceClient();
 
-    // Generate credentials with cross-hospital unique username check
-    const credentials = await generatePatientCredentials(
+    // Generate credentials directly from history name and age
+    const credentials = await generatePatientCredentialsFromHistory(
       payload.full_name,
-      Number(payload.age) || 45,
-      async (candidate) => {
-        const { data } = await serviceClient
-          .from("patients")
-          .select("id")
-          .eq("username", candidate)
-          .maybeSingle();
-        return Boolean(data);
-      }
+      Number(payload.age) || 45
     );
 
     // Insert pending patient
-    const { data: patient, error: insertError } = await supabase
+    const insertPayload = {
+      hospital_id: profile.hospital_id,
+      department_id: payload.department_id || null,
+      full_name: payload.full_name,
+      age: Number(payload.age) || 45,
+      sex: payload.sex || "Other",
+      patient_phone: payload.patient_phone,
+      caregiver_name: payload.caregiver_name || null,
+      caregiver_relation: payload.caregiver_relation || null,
+      caregiver_phone: payload.caregiver_phone || null,
+      discharge_date: payload.discharge_date,
+      status: "pending",
+      username: credentials.username,
+      password_hash: credentials.passwordHash,
+    };
+
+    let { data: patient, error: insertError } = await serviceClient
       .from("patients")
-      .insert({
-        hospital_id: profile.hospital_id,
-        department_id: payload.department_id || null,
-        full_name: payload.full_name,
-        age: Number(payload.age) || 45,
-        sex: payload.sex || "Other",
-        patient_phone: payload.patient_phone,
-        caregiver_name: payload.caregiver_name || null,
-        caregiver_relation: payload.caregiver_relation || null,
-        caregiver_phone: payload.caregiver_phone || null,
-        discharge_date: payload.discharge_date,
-        status: "pending",
-        username: credentials.username,
-        password_hash: credentials.passwordHash,
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
+
+    if (insertError && (insertError as any).code === "23505") {
+      await serviceClient
+        .from("patients")
+        .update({ username: `prev_${Date.now()}_${credentials.username}` })
+        .eq("username", credentials.username);
+
+      const retryRes = await serviceClient
+        .from("patients")
+        .insert(insertPayload)
+        .select("id")
+        .single();
+      patient = retryRes.data;
+      insertError = retryRes.error;
+    }
 
     if (insertError || !patient) {
       return { error: insertError?.message || "Failed to create pending patient account." };
@@ -162,9 +171,11 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
     let finalUsername = payload.username;
     let finalPlainPassword = payload.plainPassword;
 
+    const serviceClient = getServiceClient();
+
     // If patient was already created on Step 1, update to active
     if (patientId) {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await serviceClient
         .from("patients")
         .update({
           status: "active",
@@ -180,46 +191,54 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
       }
     } else {
       // Direct enrolment without Step 1 intermediate save
-      const serviceClient = getServiceClient();
-      const credentials = await generatePatientCredentials(
+      const credentials = await generatePatientCredentialsFromHistory(
         payload.full_name,
-        Number(payload.age) || 45,
-        async (candidate) => {
-          const { data } = await serviceClient
-            .from("patients")
-            .select("id")
-            .eq("username", candidate)
-            .maybeSingle();
-          return Boolean(data);
-        }
+        Number(payload.age) || 45
       );
 
       finalUsername = credentials.username;
       finalPlainPassword = credentials.plainPassword;
 
-      const { data: newPatient, error: insertError } = await supabase
+      const insertPayload = {
+        hospital_id: profile.hospital_id,
+        department_id: payload.department_id || null,
+        full_name: payload.full_name,
+        age: Number(payload.age) || 45,
+        sex: payload.sex,
+        patient_phone: payload.patient_phone,
+        caregiver_name: payload.caregiver_name || null,
+        caregiver_relation: payload.caregiver_relation || null,
+        caregiver_phone: payload.caregiver_phone || null,
+        discharge_date: payload.discharge_date,
+        raw_history_text: payload.raw_history_text || null,
+        status: "active",
+        username: credentials.username,
+        password_hash: credentials.passwordHash,
+        monitoring_tier: payload.monitoring_tier || "moderate",
+        plan_tier: payload.plan_tier || "free",
+        consent_given: payload.consent_given ?? true,
+      };
+
+      let { data: newPatient, error: insertError } = await serviceClient
         .from("patients")
-        .insert({
-          hospital_id: profile.hospital_id,
-          department_id: payload.department_id || null,
-          full_name: payload.full_name,
-          age: Number(payload.age) || 45,
-          sex: payload.sex,
-          patient_phone: payload.patient_phone,
-          caregiver_name: payload.caregiver_name || null,
-          caregiver_relation: payload.caregiver_relation || null,
-          caregiver_phone: payload.caregiver_phone || null,
-          discharge_date: payload.discharge_date,
-          raw_history_text: payload.raw_history_text || null,
-          status: "active",
-          username: credentials.username,
-          password_hash: credentials.passwordHash,
-          monitoring_tier: payload.monitoring_tier || "moderate",
-          plan_tier: payload.plan_tier || "free",
-          consent_given: payload.consent_given ?? true,
-        })
+        .insert(insertPayload)
         .select("id")
         .single();
+
+      if (insertError && (insertError as any).code === "23505") {
+        await serviceClient
+          .from("patients")
+          .update({ username: `prev_${Date.now()}_${credentials.username}` })
+          .eq("username", credentials.username);
+
+        const retryRes = await serviceClient
+          .from("patients")
+          .insert(insertPayload)
+          .select("id")
+          .single();
+        newPatient = retryRes.data;
+        insertError = retryRes.error;
+      }
 
       if (insertError || !newPatient) {
         return { error: insertError?.message || "Failed to create patient record." };
@@ -227,11 +246,13 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
       patientId = newPatient.id;
     }
 
+    const confirmedPatientId = patientId as string;
+
     // 2. Upsert confirmed clinical record
-    const { error: recordError } = await supabase
+    const { error: recordError } = await serviceClient
       .from("patient_records")
       .upsert({
-        patient_id: patientId,
+        patient_id: confirmedPatientId,
         hospital_id: profile.hospital_id,
         diagnosis: payload.diagnosis,
         medications: payload.medications,
@@ -259,8 +280,8 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
     });
 
     // Save monitoring plan
-    await supabase.from("monitoring_plans").insert({
-      patient_id: patientId,
+    await serviceClient.from("monitoring_plans").insert({
+      patient_id: confirmedPatientId,
       hospital_id: profile.hospital_id,
       risk_tier: plan.risk_tier,
       window_days: plan.window_days,
@@ -277,7 +298,7 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
     for (let day = 1; day <= 7; day++) {
       const scheduledDate = new Date(now.getTime() + (day - 1) * 24 * 60 * 60 * 1000);
       checkinRows.push({
-        patient_id: patientId,
+        patient_id: confirmedPatientId,
         hospital_id: profile.hospital_id,
         scheduled_day: day,
         scheduled_for: scheduledDate.toISOString(),
@@ -286,10 +307,13 @@ export async function enrolPatient(payload: EnrolPatientPayload) {
       });
     }
 
-    await supabase.from("checkins").insert(checkinRows);
+    const { error: chErr } = await serviceClient.from("checkins").insert(checkinRows);
+    if (chErr) {
+      console.error("Checkins insertion error:", chErr);
+    }
 
     // 4. Audit Log
-    await writeAudit("ENROL_PATIENT", "patients", patientId);
+    await writeAudit("ENROL_PATIENT", "patients", confirmedPatientId);
 
     revalidatePath("/app/patients");
     revalidatePath("/app/departments");
@@ -415,17 +439,9 @@ export async function batchEnrolPatients(patients: any[]) {
     // Insert patients with generated credentials
     const insertedPatients = [];
     for (const p of patients) {
-      const credentials = await generatePatientCredentials(
+      const credentials = await generatePatientCredentialsFromHistory(
         p.full_name || "Discharged Patient",
-        Number(p.age) || 45,
-        async (candidate) => {
-          const { data } = await serviceClient
-            .from("patients")
-            .select("id")
-            .eq("username", candidate)
-            .maybeSingle();
-          return Boolean(data);
-        }
+        Number(p.age) || 45
       );
 
       const { data: newP } = await supabase

@@ -15,6 +15,11 @@ export const extractedHistorySchema = z.object({
     .string()
     .nullish()
     .transform((val) => val?.trim() || "Discharged Patient"),
+  patient_age: z
+    .coerce
+    .number()
+    .nullish()
+    .transform((val) => (val && val > 0 && val < 130 ? val : null)),
   age: z
     .coerce
     .number()
@@ -84,6 +89,7 @@ export type ExtractedHistory = z.infer<typeof extractedHistorySchema>;
 // Safe fallback for manual entry when extraction fails or input is unreadable
 export const defaultManualFallback: ExtractedHistory = {
   patient_name: "Discharged Patient",
+  patient_age: 50,
   age: 50,
   sex: "Male",
   patient_phone: "+91-9876543210",
@@ -264,6 +270,7 @@ function normalizeExtractedJson(raw: any, fallbackFilename?: string): any {
   return {
     ...raw,
     patient_name: name,
+    patient_age: age,
     age: age,
     sex: sex,
     patient_phone: phone,
@@ -293,6 +300,10 @@ export async function extractMedicalHistory(input: {
     base64Data: string;
   };
   filename?: string;
+  fallbackBasics?: {
+    name?: string;
+    age?: number;
+  };
 }): Promise<{ data: ExtractedHistory; error?: string; isFallback?: boolean }> {
   const contents: (string | InlineMediaPart)[] = [];
 
@@ -330,6 +341,21 @@ export async function extractMedicalHistory(input: {
       const parsedJson = JSON.parse(cleaned);
       const normalized = normalizeExtractedJson(parsedJson, input.filename);
       const validated = extractedHistorySchema.parse(normalized);
+
+      // If document did not state patient_name or patient_age, fall back to Step 1 basics
+      if (
+        (!validated.patient_name ||
+          validated.patient_name === "Discharged Patient" ||
+          validated.patient_name.toLowerCase().includes("patient #")) &&
+        input.fallbackBasics?.name
+      ) {
+        validated.patient_name = input.fallbackBasics.name.trim();
+      }
+
+      if ((!validated.patient_age || validated.patient_age === 50) && input.fallbackBasics?.age) {
+        validated.patient_age = input.fallbackBasics.age;
+        validated.age = input.fallbackBasics.age;
+      }
 
       return { data: validated };
     } catch (err: any) {
