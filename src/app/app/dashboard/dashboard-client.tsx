@@ -393,7 +393,7 @@ export function DashboardClient({
                           {alert.reasons?.map((reason, rIdx) => (
                             <p
                               key={rIdx}
-                              className="text-xs font-semibold text-rose-900 line-clamp-1"
+                              className="text-xs font-semibold text-slate-900 line-clamp-1"
                             >
                               • {reason}
                             </p>

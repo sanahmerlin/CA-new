@@ -178,8 +178,8 @@ export default async function PatientDetailPage({
 
                 <div className="mt-2 space-y-1">
                   {(Array.isArray(highestActiveAlert.reasons) ? (highestActiveAlert.reasons as string[]) : []).map((reason: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-1.5 text-xs font-bold text-rose-900">
-                      <span className="text-rose-500">•</span>
+                    <div key={idx} className="flex items-start gap-1.5 text-xs font-bold text-slate-900">
+                      <span className="text-slate-700">•</span>
                       <span>{reason}</span>
                     </div>
                   ))}
@@ -684,8 +684,8 @@ export default async function PatientDetailPage({
                       Reported Concerns:
                     </span>
                     {(Array.isArray(alert.reasons) ? (alert.reasons as string[]) : []).map((reason: string, idx: number) => (
-                      <p key={idx} className="text-xs font-semibold text-rose-900 flex items-start gap-1.5">
-                        <span className="text-rose-500">•</span>
+                      <p key={idx} className="text-xs font-semibold text-slate-900 flex items-start gap-1.5">
+                        <span className="text-slate-700">•</span>
                         <span>{reason}</span>
                       </p>
                     ))}
