@@ -198,17 +198,6 @@ export default async function AppLayout({
               <h2 className="text-sm font-semibold text-slate-700">
                 {hospitalName}
               </h2>
-              {hospital?.contact_phone && (
-                <span className="text-xs text-slate-400 font-medium">
-                  • Emergency Helpline: {hospital.contact_phone}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-3 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                RLS Tenant Active
-              </span>
             </div>
           </header>
 
