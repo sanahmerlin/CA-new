@@ -403,15 +403,21 @@ export function PatientClient({ initialData }: Props) {
 
                     {/* Options (One-tap buttons) */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {q.options?.map((opt: any) => {
-                        const optLabel = opt.label[lang] || opt.label.en;
-                        const isSelected = selectedVal === opt.value;
+                      {q.options?.map((opt: any, optIdx: number) => {
+                        const optLabel =
+                          typeof opt === "string"
+                            ? opt
+                            : typeof opt?.label === "string"
+                            ? opt.label
+                            : opt?.label?.[lang] || opt?.label?.en || opt?.text || opt?.value || String(opt);
+                        const optVal = typeof opt === "string" ? opt : opt?.value ?? optLabel;
+                        const isSelected = selectedVal === optVal;
 
                         return (
                           <button
-                            key={opt.value}
+                            key={optVal || optIdx}
                             type="button"
-                            onClick={() => handleAnswerChange(q.id, opt.value)}
+                            onClick={() => handleAnswerChange(q.id, optVal)}
                             className={`py-2.5 px-3 rounded-lg text-xs font-medium border text-center transition-all ${
                               isSelected
                                 ? "bg-teal-600 text-white border-teal-600 shadow-xs"
@@ -432,12 +438,15 @@ export function PatientClient({ initialData }: Props) {
                           <span>Follow-up Details</span>
                         </p>
 
-                        {q.follow_ups.map((fu: any) => {
-                          const fuText = fu.text[lang] || fu.text.en;
+                        {q.follow_ups.map((fu: any, fuIdx: number) => {
+                          const fuText =
+                            typeof fu.text === "string"
+                              ? fu.text
+                              : fu.text?.[lang] || fu.text?.en || fu.topic || "Follow-up detail";
                           const fuVal = answers[fu.id];
 
                           return (
-                            <div key={fu.id} className="bg-white p-2.5 rounded-lg border border-amber-200">
+                            <div key={fu.id || fuIdx} className="bg-white p-2.5 rounded-lg border border-amber-200">
                               <div className="flex items-center justify-between gap-2 mb-2">
                                 <span className="text-xs text-slate-800 font-medium">
                                   {fuText}
@@ -452,15 +461,21 @@ export function PatientClient({ initialData }: Props) {
                               </div>
 
                               <div className="flex items-center gap-2">
-                                {fu.options?.map((fopt: any) => {
-                                  const foptLabel = fopt.label[lang] || fopt.label.en;
-                                  const isFuSelected = fuVal === fopt.value;
+                                {fu.options?.map((fopt: any, foptIdx: number) => {
+                                  const foptLabel =
+                                    typeof fopt === "string"
+                                      ? fopt
+                                      : typeof fopt?.label === "string"
+                                      ? fopt.label
+                                      : fopt?.label?.[lang] || fopt?.label?.en || fopt?.text || fopt?.value || String(fopt);
+                                  const foptVal = typeof fopt === "string" ? fopt : fopt?.value ?? foptLabel;
+                                  const isFuSelected = fuVal === foptVal;
 
                                   return (
                                     <button
-                                      key={fopt.value}
+                                      key={foptVal || foptIdx}
                                       type="button"
-                                      onClick={() => handleAnswerChange(fu.id, fopt.value)}
+                                      onClick={() => handleAnswerChange(fu.id, foptVal)}
                                       className={`flex-1 py-1.5 px-2 rounded text-xs font-medium border transition-all ${
                                         isFuSelected
                                           ? "bg-amber-600 text-white border-amber-600"
