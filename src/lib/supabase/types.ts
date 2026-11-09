@@ -492,44 +492,148 @@ export interface Database {
         ];
       };
       audit_log: {
-        Row: {
-          id: string;
-          hospital_id: string;
-          user_id: string | null;
-          action: string;
-          entity: string;
-          entity_id: string | null;
-          created_at: string;
+          Row: {
+            id: string;
+            hospital_id: string;
+            user_id: string | null;
+            action: string;
+            entity: string;
+            entity_id: string | null;
+            created_at: string;
+          };
+          Insert: {
+            id?: string;
+            hospital_id: string;
+            user_id?: string | null;
+            action: string;
+            entity: string;
+            entity_id?: string | null;
+            created_at?: string;
+          };
+          Update: {
+            id?: string;
+            hospital_id?: string;
+            user_id?: string | null;
+            action?: string;
+            entity?: string;
+            entity_id?: string | null;
+            created_at?: string;
+          };
+          Relationships: [
+            {
+              foreignKeyName: "audit_log_hospital_id_fkey";
+              columns: ["hospital_id"];
+              isOneToOne: false;
+              referencedRelation: "hospitals";
+              referencedColumns: ["id"];
+            }
+          ];
         };
-        Insert: {
-          id?: string;
-          hospital_id: string;
-          user_id?: string | null;
-          action: string;
-          entity: string;
-          entity_id?: string | null;
-          created_at?: string;
+        subscriptions: {
+          Row: {
+            id: string;
+            patient_id: string;
+            paypal_subscription_id: string | null;
+            plan_id: string | null;
+            status: "ACTIVE" | "CANCELLED" | "PENDING";
+            created_at: string;
+            updated_at: string;
+          };
+          Insert: {
+            id?: string;
+            patient_id: string;
+            paypal_subscription_id?: string | null;
+            plan_id?: string | null;
+            status?: "ACTIVE" | "CANCELLED" | "PENDING";
+            created_at?: string;
+            updated_at?: string;
+          };
+          Update: {
+            id?: string;
+            patient_id?: string;
+            paypal_subscription_id?: string | null;
+            plan_id?: string | null;
+            status?: "ACTIVE" | "CANCELLED" | "PENDING";
+            created_at?: string;
+            updated_at?: string;
+          };
+          Relationships: [
+            {
+              foreignKeyName: "subscriptions_patient_id_fkey";
+              columns: ["patient_id"];
+              isOneToOne: false;
+              referencedRelation: "patients";
+              referencedColumns: ["id"];
+            }
+          ];
         };
-        Update: {
-          id?: string;
-          hospital_id?: string;
-          user_id?: string | null;
-          action?: string;
-          entity?: string;
-          entity_id?: string | null;
-          created_at?: string;
+        ambulances: {
+          Row: {
+            id: string;
+            name: string;
+            driver_name: string;
+            phone: string;
+            latitude: number;
+            longitude: number;
+            is_available: boolean;
+            base_area: string;
+            created_at: string;
+          };
+          Insert: {
+            id?: string;
+            name: string;
+            driver_name: string;
+            phone: string;
+            latitude: number;
+            longitude: number;
+            is_available?: boolean;
+            base_area: string;
+            created_at?: string;
+          };
+          Update: {
+            id?: string;
+            name?: string;
+            driver_name?: string;
+            phone?: string;
+            latitude?: number;
+            longitude?: number;
+            is_available?: boolean;
+            base_area?: string;
+            created_at?: string;
+          };
+          Relationships: [];
         };
-        Relationships: [
-          {
-            foreignKeyName: "audit_log_hospital_id_fkey";
-            columns: ["hospital_id"];
-            isOneToOne: false;
-            referencedRelation: "hospitals";
-            referencedColumns: ["id"];
-          }
-        ];
+        on_duty_doctors: {
+          Row: {
+            id: string;
+            name: string;
+            specialty: string;
+            phone: string;
+            is_on_duty: boolean;
+            hospital: string;
+            created_at: string;
+          };
+          Insert: {
+            id?: string;
+            name: string;
+            specialty: string;
+            phone: string;
+            is_on_duty?: boolean;
+            hospital: string;
+            created_at?: string;
+          };
+          Update: {
+            id?: string;
+            name?: string;
+            specialty?: string;
+            phone?: string;
+            is_on_duty?: boolean;
+            hospital?: string;
+            created_at?: string;
+          };
+          Relationships: [];
+        };
       };
-    };
     Views: Record<string, never>;
     Functions: {
       current_hospital_id: {
