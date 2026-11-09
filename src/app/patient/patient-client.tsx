@@ -21,6 +21,8 @@ import {
   Activity,
 } from "lucide-react";
 import { getPatientPortalDataFromSession, submitPatientCheckinFromSession, logoutPatientAction } from "./actions";
+import { CarePlusChat } from "@/components/CarePlusChat";
+import { CarePlusSubscribe } from "@/components/CarePlusSubscribe";
 
 interface Props {
   initialData: any;
@@ -32,6 +34,19 @@ export function PatientClient({ initialData }: Props) {
   const [patientData, setPatientData] = useState<any>(initialData?.patient || null);
   const [checkin, setCheckin] = useState<any>(initialData?.checkin || null);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // Care+ state
+  const [activeTab, setActiveTab] = useState<"checkin" | "careplus">("checkin");
+  const [isCarePlus, setIsCarePlus] = useState<boolean>(
+    initialData?.patient?.isCarePlusActive ?? (initialData?.patient?.planTier === "pro")
+  );
+
+  const handleCarePlusSuccess = () => {
+    setIsCarePlus(true);
+    if (patientData) {
+      setPatientData({ ...patientData, isCarePlusActive: true, planTier: "pro" });
+    }
+  };
 
   // Answers State
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -56,6 +71,9 @@ export function PatientClient({ initialData }: Props) {
           setPatientData(res.patient);
           setCheckin(res.checkin);
           setIsPending(false);
+          if (res.patient?.isCarePlusActive) {
+            setIsCarePlus(true);
+          }
         }
       } catch {
         // Silent catch during periodic background poll
@@ -298,6 +316,49 @@ export function PatientClient({ initialData }: Props) {
           </div>
         </header>
 
+        {/* Patient Navigation Tabs */}
+        <div className="bg-slate-50 border-b border-slate-200 px-4 pt-2 flex items-center gap-4 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setActiveTab("checkin")}
+            className={`pb-2.5 border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === "checkin"
+                ? "border-teal-600 text-teal-800 font-bold"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Activity className="h-3.5 w-3.5" />
+            <span>Daily Check-In</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("careplus")}
+            className={`pb-2.5 border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === "careplus"
+                ? "border-teal-600 text-teal-800 font-bold"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+            <span>Care+ Help</span>
+            {isCarePlus ? (
+              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-teal-100 text-teal-800 rounded-full">PRO</span>
+            ) : (
+              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded-full">NEW</span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === "careplus" ? (
+          <div className="p-4 flex-1">
+            <CarePlusChat
+              lang={lang}
+              isSubscribed={isCarePlus}
+              onSubscribeSuccess={handleCarePlusSuccess}
+            />
+          </div>
+        ) : (
+          <>
         {/* ====================================================================== */}
         {/* VIEW 1: PENDING STATE (Waiting for Doctor Confirmation & Enrolment)    */}
         {/* ====================================================================== */}
@@ -554,6 +615,13 @@ export function PatientClient({ initialData }: Props) {
                 </>
               )}
             </button>
+
+            {/* Step 2: Care+ Subscribe card for non-subscribed patients */}
+            {!isCarePlus && (
+              <div className="pt-2">
+                <CarePlusSubscribe onSubscribed={handleCarePlusSuccess} lang={lang} />
+              </div>
+            )}
           </div>
         )}
 
@@ -613,6 +681,30 @@ export function PatientClient({ initialData }: Props) {
                 </div>
               )}
             </div>
+
+            {/* Step 5: Connect to Triage - Non-blocking Care+ banner */}
+            {(result.hasCritical || result.hasUrgent) && (
+              <div className="p-3.5 bg-gradient-to-r from-teal-900 to-slate-900 border border-teal-500/40 rounded-xl text-white shadow-sm flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-teal-500/20 rounded-lg text-amber-400 shrink-0">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="text-left">
+                    <span className="text-xs font-bold block">Need help now?</span>
+                    <span className="text-[11px] text-teal-200">
+                      Care+ gives you 24/7 doctor and ambulance access.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("careplus")}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-lg whitespace-nowrap shadow-xs transition-colors shrink-0"
+                >
+                  Open Care+
+                </button>
+              </div>
+            )}
 
             {/* Emergency & Escalation Numbers */}
             {(result.hasCritical || result.hasUrgent) && (
@@ -680,6 +772,8 @@ export function PatientClient({ initialData }: Props) {
               Review or Update Answers
             </button>
           </div>
+        )}
+        </>
         )}
 
         {/* Footer info */}

@@ -14,6 +14,7 @@ import {
 } from "@/lib/auth/patient-session";
 import { scanForRedFlags, calculateFinalSeverity, Severity } from "@/lib/safety/redflags";
 import { generateGeminiContent } from "@/lib/ai/gemini";
+import { isCarePlusActive } from "@/lib/subscriptions/careplus";
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -143,6 +144,9 @@ export async function getPatientPortalDataFromSession() {
       ? patient.patient_records[0]
       : patient.patient_records;
 
+    const carePlusActive = await isCarePlusActive(session.patientId);
+    const effectivePlanTier = carePlusActive ? "pro" : patient.plan_tier || "free";
+
     // Check if patient is in PENDING state (before doctor confirms enrolment)
     if (patient.status === "pending") {
       return {
@@ -154,7 +158,8 @@ export async function getPatientPortalDataFromSession() {
           age: patient.age,
           sex: patient.sex,
           status: "pending",
-          planTier: patient.plan_tier || "free",
+          planTier: effectivePlanTier,
+          isCarePlusActive: carePlusActive,
           monitoringTier: patient.monitoring_tier || "moderate",
           hospitalName: hospital?.name || "CareAfter Health Network",
           hospitalPhone: hospital?.contact_phone || "+91-484-2800100",
@@ -188,7 +193,8 @@ export async function getPatientPortalDataFromSession() {
           age: patient.age,
           sex: patient.sex,
           status: "pending",
-          planTier: patient.plan_tier || "free",
+          planTier: effectivePlanTier,
+          isCarePlusActive: carePlusActive,
           monitoringTier: patient.monitoring_tier || "moderate",
           hospitalName: hospital?.name || "CareAfter Health Network",
           hospitalPhone: hospital?.contact_phone || "+91-484-2800100",
@@ -207,7 +213,8 @@ export async function getPatientPortalDataFromSession() {
         age: patient.age,
         sex: patient.sex,
         status: patient.status,
-        planTier: patient.plan_tier || "free",
+        planTier: effectivePlanTier,
+        isCarePlusActive: carePlusActive,
         monitoringTier: patient.monitoring_tier || "moderate",
         hospitalName: hospital?.name || "CareAfter Health Network",
         hospitalPhone: hospital?.contact_phone || "+91-484-2800100",
